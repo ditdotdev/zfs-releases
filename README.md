@@ -1,5 +1,7 @@
 # Titan ZFS builds
 
+<!-- Test comment to verify updated GitHub Actions workflow - September 24, 2025 -->
+
 [![Build Status](https://travis-ci.org/titan-data/zfs-releases.svg?branch=master)](https://travis-ci.org/titan-data/zfs-releases)
 ![GitHub last commit](https://img.shields.io/github/last-commit/titan-data/zfs-releases)
 ![GitHub issues](https://img.shields.io/github/issues/titan-data/zfs-releases)
