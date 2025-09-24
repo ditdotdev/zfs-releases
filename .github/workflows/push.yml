@@ -2,18 +2,21 @@ name: Push
 
 on: push
 
+permissions:
+  contents: read
+
 jobs:
   build_userland:
     name: Build Userland
     if: startsWith(github.ref, 'refs/heads/')
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-latest
     strategy:
       matrix:
         zfs:
           - 0.8.2
           - 2.0.4
     steps:
-      - uses: actions/checkout@v1
+      - uses: actions/checkout@v4
       - name: Build
         run: ./build -b ${{ secrets.s3_url }} -z ${{ matrix.zfs }} 4.9.184-linuxkit
       - name: Publish
@@ -24,7 +27,7 @@ jobs:
   build_kernel:
     name: Build Kernel
     if: startsWith(github.ref, 'refs/heads/')
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-latest
     strategy:
       matrix:
         zfs:
@@ -51,7 +54,7 @@ jobs:
           - 4.19.72-microsoft-standard
           - 4.19.128-microsoft-standard
     steps:
-      - uses: actions/checkout@v1
+      - uses: actions/checkout@v4
       - name: Build
         run: ./build -b ${{ secrets.s3_url }} -k -z ${{ matrix.zfs }} ${{ matrix.kernel }}
       - name: Publish
