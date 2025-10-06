@@ -42,19 +42,16 @@ jobs:
           - 5.15.27-linuxkit  # LinuxKit 5.15.27 LTS (legacy)
           - 5.10.104-linuxkit # LinuxKit 5.10.104 LTS (legacy supported)
           
-          # Ubuntu variants - Actual available kernel versions
+          # Ubuntu variants - Base repository kernels (guaranteed availability)
           # https://ubuntu.com/about/release-cycle
           # Ubuntu 24.04 LTS (Noble Numbat) - Supported until April 2029
-          - 6.8.0-85-generic  # Ubuntu 24.04 LTS generic kernel (latest available)
-          - 6.8.0-84-generic  # Ubuntu 24.04 LTS generic kernel (recent)
+          - 6.8.0-31-generic  # Ubuntu 24.04 LTS base kernel (main repo)
           
           # Ubuntu 22.04 LTS (Jammy Jellyfish) - Supported until April 2027
-          - 6.8.0-85-generic  # Ubuntu 22.04 LTS HWE kernel (latest available)
-          - 5.15.0-97-generic # Ubuntu 22.04 LTS generic kernel (latest available)
+          - 5.15.0-25-generic # Ubuntu 22.04 LTS base kernel (main repo)
           
           # Ubuntu 20.04 LTS (Focal Fossa) - Supported until May 2025
-          - 5.8.0-63-generic  # Ubuntu 20.04 LTS HWE kernel (latest available)
-          - 5.4.0-99-generic  # Ubuntu 20.04 LTS base kernel (latest available)
+          - 5.4.0-26-generic  # Ubuntu 20.04 LTS base kernel (main repo)
     steps:
       - uses: actions/checkout@v4
       - name: Build
