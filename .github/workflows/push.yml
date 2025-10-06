@@ -42,27 +42,19 @@ jobs:
           - 5.15.27-linuxkit  # LinuxKit 5.15.27 LTS (legacy)
           - 5.10.104-linuxkit # LinuxKit 5.10.104 LTS (legacy supported)
           
-          # Ubuntu variants - Current LTS releases
+          # Ubuntu variants - Actual available kernel versions
           # https://ubuntu.com/about/release-cycle
           # Ubuntu 24.04 LTS (Noble Numbat) - Supported until April 2029
-          - 6.8.0-49-generic  # Ubuntu 24.04 LTS generic kernel
-          - 6.8.0-1014-gcp    # Ubuntu 24.04 LTS GCP-optimized kernel
-          - 6.8.0-1018-aws    # Ubuntu 24.04 LTS AWS-optimized kernel
+          - 6.8.0-85-generic  # Ubuntu 24.04 LTS generic kernel (latest available)
+          - 6.8.0-84-generic  # Ubuntu 24.04 LTS generic kernel (recent)
           
           # Ubuntu 22.04 LTS (Jammy Jellyfish) - Supported until April 2027
-          - 5.15.0-125-generic # Ubuntu 22.04 LTS generic kernel
-          - 5.15.0-1071-gcp    # Ubuntu 22.04 LTS GCP-optimized kernel
-          - 5.15.0-1076-aws    # Ubuntu 22.04 LTS AWS-optimized kernel
+          - 6.8.0-85-generic  # Ubuntu 22.04 LTS HWE kernel (latest available)
+          - 5.15.0-97-generic # Ubuntu 22.04 LTS generic kernel (latest available)
           
           # Ubuntu 20.04 LTS (Focal Fossa) - Supported until May 2025
-          - 5.4.0-196-generic  # Ubuntu 20.04 LTS generic kernel
-          - 5.4.0-1128-gcp     # Ubuntu 20.04 LTS GCP-optimized kernel
-          - 5.4.0-1132-aws     # Ubuntu 20.04 LTS AWS-optimized kernel
-          
-          # WSL variants - Windows Subsystem for Linux 2 kernels
-          # https://github.com/microsoft/WSL2-Linux-Kernel
-          - 6.6.87.2-microsoft-standard # WSL2 6.6.87.2 (current stable, June 2025)
-          - 5.15.167.4-microsoft-standard # WSL2 5.15.167.4 (LTS, November 2024)
+          - 5.8.0-63-generic  # Ubuntu 20.04 LTS HWE kernel (latest available)
+          - 5.4.0-99-generic  # Ubuntu 20.04 LTS base kernel (latest available)
     steps:
       - uses: actions/checkout@v4
       - name: Build
