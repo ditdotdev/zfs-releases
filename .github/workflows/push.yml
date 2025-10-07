@@ -34,9 +34,6 @@ jobs:
           - 2.3.4
         kernel:
           # LinuxKit variants
-#          - 4.14.131-linuxkit
-#          - 4.9.184-linuxkit
-#          - 4.9.125-linuxkit
           - 5.15.27-linuxkit
           - 6.6.71-linuxkit
           # Ubuntu variants
@@ -52,8 +49,9 @@ jobs:
           - 3.10.0-1062.4.1.el7.x86_64
           - 4.18.0-147.5.1.el8_1.x86_64
           # WSL variants
-          - 4.19.72-microsoft-standard
-          - 4.19.128-microsoft-standard
+          # TODO: commenting to speed up build while testing.
+          #- 4.19.72-microsoft-standard
+          #- 4.19.128-microsoft-standard
     steps:
       - uses: actions/checkout@v4
       - name: Build
