@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright The Titan Project Contributors.
+# Copyright Datadatdat.
 #
 
 set -ex
