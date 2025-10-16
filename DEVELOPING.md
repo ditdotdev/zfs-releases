@@ -1,7 +1,7 @@
 # ZFS Release Development
 
 For general information about contributing changes, see the
-[Contributor Guidelines](https://github.com/titan-data/.github/blob/master/CONTRIBUTING.md).
+[Contributor Guidelines](https://github.com/datadatdat/.github/blob/master/CONTRIBUTING.md).
 
 ## How it works
 
