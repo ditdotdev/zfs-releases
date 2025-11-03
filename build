@@ -96,6 +96,13 @@ for version in $zfs_versions; do
 
     cd $build_dir/$release
 
+    # Check if container fell back to userspace-only (LinuxKit case)
+    # This can happen when kernel modules are not supported (CONFIG_MODULES=n)
+    if [[ -f .zfs-userspace-only ]]; then
+        echo "⚠️  Container detected userspace-only fallback, adjusting archive creation"
+        zfs_config=user
+    fi
+
     if [[ $zfs_config != kernel ]]; then
         echo "Creating userland archive $userland_archive"
         tar -czf $archive_dir/$userland_archive \
@@ -105,7 +112,13 @@ for version in $zfs_versions; do
 
     if [[ $zfs_config != user ]]; then
       echo "Creating kernel archive $kernel_archive"
-      tar -czf $archive_dir/$kernel_archive lib/modules || exit 1
+      # Only create kernel archive if lib/modules actually exists
+      if [[ -d lib/modules ]]; then
+        tar -czf $archive_dir/$kernel_archive lib/modules || exit 1
+      else
+        echo "⚠️  lib/modules directory not found, skipping kernel archive creation"
+        echo "    This is expected for userspace-only builds"
+      fi
     fi
 
     first=false
