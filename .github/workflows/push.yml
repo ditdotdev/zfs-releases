@@ -48,15 +48,12 @@ jobs:
           # Ubuntu LTS variants - Base repository kernels (guaranteed availability)
           # https://ubuntu.com/about/release-cycle
           # Using only base kernels from main repos (not cloud-specific variants)
+          # NOTE: Build container uses Ubuntu 22.04, so only kernels available in
+          # the 22.04 repos (jammy) can be installed. Ubuntu 20.04 and 24.04 kernels
+          # are not available in the 22.04 package repositories.
           
-          # Ubuntu 24.04 LTS (Noble Numbat) - Supported until April 2029
-          - 6.8.0-31-generic  # Ubuntu 24.04 LTS base kernel (main repo)
-
           # Ubuntu 22.04 LTS (Jammy Jellyfish) - Supported until April 2027
-          - 5.15.0-25-generic # Ubuntu 22.04 LTS base kernel (main repo)
-
-          # Ubuntu 20.04 LTS (Focal Fossa) - Supported until May 2025
-          - 5.4.0-26-generic  # Ubuntu 20.04 LTS base kernel (main repo)
+          - 5.15.0-25-generic # Ubuntu 22.04 LTS base kernel (available in jammy repos)
     steps:
       - uses: actions/checkout@v4
       - name: Build
