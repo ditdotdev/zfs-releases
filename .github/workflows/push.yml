@@ -13,8 +13,8 @@ jobs:
     strategy:
       matrix:
         zfs:
-          - 0.8.2
-          - 2.0.4
+          - 2.3.4
+          - 2.2.8
     steps:
       - uses: actions/checkout@v4
       - name: Build
