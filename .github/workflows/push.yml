@@ -11,6 +11,7 @@ jobs:
     if: startsWith(github.ref, 'refs/heads/')
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         zfs:
           - 2.3.4
@@ -29,6 +30,7 @@ jobs:
     if: startsWith(github.ref, 'refs/heads/')
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         zfs:
           - 2.3.4
