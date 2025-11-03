@@ -5,7 +5,7 @@
 
 set -x
 
-zfs_versions="2.0.7"
+zfs_versions="2.2.8"
 userland_only=false
 kernel_only=false
 kernel_releases=
@@ -13,7 +13,7 @@ src_dir=$PWD/src
 out_dir=$PWD/out
 archive_dir=$out_dir/archive
 build_dir=$out_dir/build
-zfs_builder=Datadatdatdata/zfs-builder:latest
+zfs_builder=datadatdat/zfs-builder:latest
 archive_url=
 
 function usage() {
