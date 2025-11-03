@@ -1,5 +1,5 @@
 ARG OS=22.04
-FROM Datadatdatdata/zfs-builder-ubuntu:$OS
+FROM datadatdat/zfs-builder-ubuntu:$OS
 
 ARG S3
 ARG ZFS
