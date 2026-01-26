@@ -18,6 +18,12 @@ jobs:
           - 2.2.8
     steps:
       - uses: actions/checkout@v4
+      - name: Build zfs-builder image
+        run: |
+          cd /tmp
+          git clone --depth 1 https://github.com/datadatdat/zfs-builder.git
+          cd zfs-builder
+          docker build -t datadatdat/zfs-builder:latest .
       - name: Build
         run: ./build -b ${{ secrets.s3_url }} -z ${{ matrix.zfs }} 6.6.71-linuxkit
       - name: Publish
@@ -58,6 +64,12 @@ jobs:
           - 6.8.0-64-generic  # Ubuntu 22.04 HWE kernel (for Colima on ARM64)
     steps:
       - uses: actions/checkout@v4
+      - name: Build zfs-builder image
+        run: |
+          cd /tmp
+          git clone --depth 1 https://github.com/datadatdat/zfs-builder.git
+          cd zfs-builder
+          docker build -t datadatdat/zfs-builder:latest .
       - name: Build
         run: ./build -b ${{ secrets.s3_url }} -k -z ${{ matrix.zfs }} ${{ matrix.kernel }}
       - name: Publish
