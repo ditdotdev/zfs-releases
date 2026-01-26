@@ -63,9 +63,7 @@ jobs:
           
           # Ubuntu 22.04 LTS (Jammy Jellyfish) - Supported until April 2027
           - 5.15.0-25-generic # Ubuntu 22.04 LTS base kernel (available in jammy repos)
-          
-          # Ubuntu 22.04 HWE kernels (Hardware Enablement)
-          - 6.8.0-64-generic  # Ubuntu 22.04 HWE kernel (for Colima on ARM64)
+          - 6.8.0-64-generic  # Ubuntu 22.04 kernel (for Colima on ARM64)
     steps:
       - uses: actions/checkout@v4
       - name: Checkout zfs-builder
