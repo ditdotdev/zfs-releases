@@ -18,10 +18,14 @@ jobs:
           - 2.2.8
     steps:
       - uses: actions/checkout@v4
+      - name: Checkout zfs-builder
+        uses: actions/checkout@v4
+        with:
+          repository: datadatdat/zfs-builder
+          token: ${{ secrets.GO_MODULES_TOKEN }}
+          path: zfs-builder
       - name: Build zfs-builder image
         run: |
-          cd /tmp
-          git clone --depth 1 https://github.com/datadatdat/zfs-builder.git
           cd zfs-builder
           docker build -t datadatdat/zfs-builder:latest .
       - name: Build
@@ -64,10 +68,14 @@ jobs:
           - 6.8.0-64-generic  # Ubuntu 22.04 HWE kernel (for Colima on ARM64)
     steps:
       - uses: actions/checkout@v4
+      - name: Checkout zfs-builder
+        uses: actions/checkout@v4
+        with:
+          repository: datadatdat/zfs-builder
+          token: ${{ secrets.GO_MODULES_TOKEN }}
+          path: zfs-builder
       - name: Build zfs-builder image
         run: |
-          cd /tmp
-          git clone --depth 1 https://github.com/datadatdat/zfs-builder.git
           cd zfs-builder
           docker build -t datadatdat/zfs-builder:latest .
       - name: Build
