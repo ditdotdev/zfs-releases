@@ -7,15 +7,29 @@ permissions:
 
 jobs:
   build_userland:
-    name: Build Userland
+    name: Build Userland (${{ matrix.arch }})
     if: startsWith(github.ref, 'refs/heads/')
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
-        zfs:
-          - 2.3.4
-          - 2.2.8
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+            kernel: 6.6.71-linuxkit
+            zfs: 2.3.4
+          - arch: amd64
+            runner: ubuntu-latest
+            kernel: 6.6.71-linuxkit
+            zfs: 2.2.8
+          - arch: arm64
+            runner: macos-14
+            kernel: 6.8.0-64-generic
+            zfs: 2.3.4
+          - arch: arm64
+            runner: macos-14
+            kernel: 6.8.0-64-generic
+            zfs: 2.2.8
     steps:
       - uses: actions/checkout@v4
       - name: Checkout zfs-builder
@@ -29,41 +43,84 @@ jobs:
           cd zfs-builder
           docker build -t datadatdat/zfs-builder:latest .
       - name: Build
-        run: ./build -b ${{ secrets.s3_url }} -z ${{ matrix.zfs }} 6.6.71-linuxkit
+        run: ./build -b ${{ secrets.s3_url }} -z ${{ matrix.zfs }} ${{ matrix.kernel }}
+      - name: Rename userland with arch suffix
+        run: |
+          cd out/archive
+          if [ -f "zfs-${{ matrix.zfs }}-userland.tar.gz" ]; then
+            mv "zfs-${{ matrix.zfs }}-userland.tar.gz" "zfs-${{ matrix.zfs }}-userland-${{ matrix.arch }}.tar.gz"
+          fi
       - name: Publish
         run: ./publish ${{ secrets.s3_bucket }}
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
   build_kernel:
-    name: Build Kernel
+    name: Build Kernel (${{ matrix.arch }})
     if: startsWith(github.ref, 'refs/heads/')
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
-        zfs:
-          - 2.3.4
-          - 2.2.8
-        kernel:
-          # LinuxKit variants - Container-optimized kernels from Docker
-          # https://github.com/linuxkit/linuxkit
-          # All versions >= 4.18 (minimum required by ZFS 2.3.4/2.2.8)
-          - 6.6.71-linuxkit   # LinuxKit 6.6.71 LTS (current stable)
-          - 6.6.13-linuxkit   # LinuxKit 6.6.13 LTS (current)
-          - 5.15.27-linuxkit  # LinuxKit 5.15.27 LTS (legacy)
-          - 5.10.104-linuxkit # LinuxKit 5.10.104 LTS (legacy supported)
-
-          # Ubuntu LTS variants - Base repository kernels (guaranteed availability)
-          # https://ubuntu.com/about/release-cycle
-          # Using only base kernels from main repos (not cloud-specific variants)
-          # NOTE: Build container uses Ubuntu 22.04, so only kernels available in
-          # the 22.04 repos (jammy) can be installed. Ubuntu 20.04 and 24.04 kernels
-          # are not available in the 22.04 package repositories.
-          
-          # Ubuntu 22.04 LTS (Jammy Jellyfish) - Supported until April 2027
-          - 5.15.0-25-generic # Ubuntu 22.04 LTS base kernel (available in jammy repos)
-          - 6.8.0-64-generic  # Ubuntu 22.04 kernel (for Colima on ARM64)
+        include:
+          # AMD64 builds on ubuntu-latest
+          - arch: amd64
+            runner: ubuntu-latest
+            zfs: 2.3.4
+            kernel: 6.6.71-linuxkit
+          - arch: amd64
+            runner: ubuntu-latest
+            zfs: 2.3.4
+            kernel: 6.6.13-linuxkit
+          - arch: amd64
+            runner: ubuntu-latest
+            zfs: 2.3.4
+            kernel: 5.15.27-linuxkit
+          - arch: amd64
+            runner: ubuntu-latest
+            zfs: 2.3.4
+            kernel: 5.10.104-linuxkit
+          - arch: amd64
+            runner: ubuntu-latest
+            zfs: 2.3.4
+            kernel: 5.15.0-25-generic
+          - arch: amd64
+            runner: ubuntu-latest
+            zfs: 2.3.4
+            kernel: 6.8.0-64-generic
+          - arch: amd64
+            runner: ubuntu-latest
+            zfs: 2.2.8
+            kernel: 6.6.71-linuxkit
+          - arch: amd64
+            runner: ubuntu-latest
+            zfs: 2.2.8
+            kernel: 6.6.13-linuxkit
+          - arch: amd64
+            runner: ubuntu-latest
+            zfs: 2.2.8
+            kernel: 5.15.27-linuxkit
+          - arch: amd64
+            runner: ubuntu-latest
+            zfs: 2.2.8
+            kernel: 5.10.104-linuxkit
+          - arch: amd64
+            runner: ubuntu-latest
+            zfs: 2.2.8
+            kernel: 5.15.0-25-generic
+          - arch: amd64
+            runner: ubuntu-latest
+            zfs: 2.2.8
+            kernel: 6.8.0-64-generic
+          # ARM64 builds on macos-14 (Apple Silicon)
+          - arch: arm64
+            runner: macos-14
+            zfs: 2.3.4
+            kernel: 6.8.0-64-generic
+          - arch: arm64
+            runner: macos-14
+            zfs: 2.2.8
+            kernel: 6.8.0-64-generic
     steps:
       - uses: actions/checkout@v4
       - name: Checkout zfs-builder
@@ -78,6 +135,12 @@ jobs:
           docker build -t datadatdat/zfs-builder:latest .
       - name: Build
         run: ./build -b ${{ secrets.s3_url }} -k -z ${{ matrix.zfs }} ${{ matrix.kernel }}
+      - name: Rename kernel modules with arch suffix
+        run: |
+          cd out/archive
+          if [ -f "zfs-${{ matrix.zfs }}-${{ matrix.kernel }}.tar.gz" ]; then
+            mv "zfs-${{ matrix.zfs }}-${{ matrix.kernel }}.tar.gz" "zfs-${{ matrix.zfs }}-${{ matrix.kernel }}-${{ matrix.arch }}.tar.gz"
+          fi
       - name: Publish
         run: ./publish ${{ secrets.s3_bucket }}
         env:
