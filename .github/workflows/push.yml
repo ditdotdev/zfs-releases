@@ -35,7 +35,8 @@ jobs:
       - name: Install Docker on macOS
         if: runner.os == 'macOS'
         run: |
-          brew install colima docker docker-buildx
+          brew install colima 
+          brew install docker docker-buildx
 
           # Use a patched limactl that doesn't use Hypervisor Framework (hvf)
           LIMACTL_PATH=$(brew --prefix)/bin/limactl
