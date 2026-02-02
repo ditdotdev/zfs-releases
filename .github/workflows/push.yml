@@ -39,11 +39,8 @@ jobs:
           brew install colima 
           brew install docker docker-buildx
 
-          # Use a patched limactl that doesn't use Hypervisor Framework (hvf)
-          LIMACTL_PATH=$(brew --prefix)/bin/limactl
-          sudo curl -L -o $LIMACTL_PATH https://github.com/mikekazakov/lima-nohvf/raw/master/limactl && sudo chmod +x $LIMACTL_PATH
-          colima start --network-address --arch arm64 --vm-type=qemu --cpu 4 --memory 8 --disk 50
-
+          # Start Colima with QEMU (no HVF needed)
+          colima start --arch aarch64 --vm-type=qemu --cpu 4 --memory 8 --disk 50
       - name: Checkout zfs-builder
         uses: actions/checkout@v4
         with:
@@ -139,8 +136,11 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           brew install qemu
-          brew install docker docker-buildx colima
-          colima start --network-address --arch arm64 --vm-type=qemu --cpu 4 --memory 8 --disk 50
+          brew install colima
+          brew install docker docker-buildx
+          
+          # Start Colima with QEMU (no HVF needed)
+          colima start --arch aarch64 --vm-type=qemu --cpu 4 --memory 8 --disk 50
       - name: Checkout zfs-builder
         uses: actions/checkout@v4
         with:
