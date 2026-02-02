@@ -32,6 +32,12 @@ jobs:
             zfs: 2.2.8
     steps:
       - uses: actions/checkout@v4
+      - name: Install Docker on macOS
+        if: runner.os == 'macOS'
+        run: |
+          brew install colima
+          brew install docker docker-buildx
+          colima start --cpu 4 --memory 8 --disk 50
       - name: Checkout zfs-builder
         uses: actions/checkout@v4
         with:
@@ -123,6 +129,11 @@ jobs:
             kernel: 6.8.0-64-generic
     steps:
       - uses: actions/checkout@v4
+      - name: Install Docker on macOS
+        if: runner.os == 'macOS'
+        run: |
+          brew install docker docker-buildx colima
+          colima start --cpu 4 --memory 8 --disk 50
       - name: Checkout zfs-builder
         uses: actions/checkout@v4
         with:
