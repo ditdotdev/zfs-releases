@@ -7,7 +7,7 @@ permissions:
 
 jobs:
   build_userland:
-    name: Build Userland (${{ matrix.arch }})
+    name: Build Userland (${{ matrix.arch }}, ${{ matrix.zfs }}, ${{ matrix.kernel }})
     if: startsWith(github.ref, 'refs/heads/')
     runs-on: ubuntu-latest
     strategy:
@@ -60,7 +60,7 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
   build_kernel:
-    name: Build Kernel (${{ matrix.arch }})
+    name: Build Kernel (${{ matrix.arch }}, ${{ matrix.zfs }}, ${{ matrix.kernel }})
     if: startsWith(github.ref, 'refs/heads/')
     runs-on: ubuntu-latest
     strategy:
