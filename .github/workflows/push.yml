@@ -47,7 +47,7 @@ jobs:
           cd zfs-builder
           docker buildx build --platform ${{ matrix.platform }} --load -t datadatdat/zfs-builder:latest .
       - name: Build
-        run: ./build -b ${{ secrets.s3_url }} -z ${{ matrix.zfs }} ${{ matrix.kernel }}
+        run: ./build -z ${{ matrix.zfs }} ${{ matrix.kernel }}
       - name: Rename userland with arch suffix
         run: |
           cd out/archive
@@ -142,7 +142,7 @@ jobs:
           cd zfs-builder
           docker buildx build --platform ${{ matrix.platform }} --load -t datadatdat/zfs-builder:latest .
       - name: Build
-        run: ./build -b ${{ secrets.s3_url }} -k -z ${{ matrix.zfs }} ${{ matrix.kernel }}
+        run: ./build -k -z ${{ matrix.zfs }} ${{ matrix.kernel }}
       - name: Rename kernel modules with arch suffix
         run: |
           cd out/archive
