@@ -86,10 +86,12 @@ jobs:
             platform: linux/amd64
             zfs: 2.3.4
             kernel: 5.10.104-linuxkit
-          - arch: amd64
-            platform: linux/amd64
-            zfs: 2.3.4
-            kernel: 5.15.0-25-generic
+          # Disabled: 5.15.0-25-generic has incompatible symbol exports (__x86_return_thunk, fault_in_iov_iter_readable, timer_delete_sync)
+          # See: https://github.com/datadatdat/zfs-releases/actions/runs/21638695810
+          # - arch: amd64
+          #   platform: linux/amd64
+          #   zfs: 2.3.4
+          #   kernel: 5.15.0-25-generic
           - arch: amd64
             platform: linux/amd64
             zfs: 2.3.4
@@ -110,10 +112,12 @@ jobs:
             platform: linux/amd64
             zfs: 2.2.8
             kernel: 5.10.104-linuxkit
-          - arch: amd64
-            platform: linux/amd64
-            zfs: 2.2.8
-            kernel: 5.15.0-25-generic
+          # Disabled: 5.15.0-25-generic has incompatible symbol exports (__x86_return_thunk, fault_in_iov_iter_readable, timer_delete_sync)
+          # See: https://github.com/datadatdat/zfs-releases/actions/runs/21638695810
+          # - arch: amd64
+          #   platform: linux/amd64
+          #   zfs: 2.2.8
+          #   kernel: 5.15.0-25-generic
           - arch: amd64
             platform: linux/amd64
             zfs: 2.2.8
