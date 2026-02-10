@@ -4,7 +4,7 @@ go 1.25.1
 
 require (
 	github.com/google/go-github/v39 v39.2.0
-	golang.org/x/oauth2 v0.34.0
+	golang.org/x/oauth2 v0.35.0
 )
 
 require (
