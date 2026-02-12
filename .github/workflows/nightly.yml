@@ -10,13 +10,13 @@ permissions:
 
 jobs:
   build_userland:
-    name: Build Userland (2.1.5)
+    name: Build Userland (2.3.4)
     if: startsWith(github.ref, 'refs/heads/')
     runs-on: ubuntu-latest
     strategy:
       matrix:
         zfs:
-          - 2.1.5
+          - 2.3.4
     steps:
       - uses: actions/checkout@v4
       - name: Set up QEMU for cross-platform builds
@@ -61,7 +61,7 @@ jobs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
 
   build_kernel_ubuntu-20:
-    name: Build Kernel (2.1.5, ${{ matrix.kernels }})
+    name: Build Kernel (2.3.4, ${{ matrix.kernels }})
     needs: get_kernels_ubuntu-20
     if: startsWith(github.ref, 'refs/heads/')
     runs-on: ubuntu-latest
@@ -69,7 +69,7 @@ jobs:
       fail-fast: false
       matrix:
         zfs:
-          - 2.1.5
+          - 2.3.4
         kernels: ${{ fromJson(needs.get_kernels_ubuntu-20.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v4
