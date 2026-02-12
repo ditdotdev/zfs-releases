@@ -32,6 +32,14 @@ jobs:
             platform: linux/arm64
             kernel: 6.8.0-64-generic
             zfs: 2.2.8
+          - arch: arm64
+            platform: linux/arm64
+            kernel: 6.8.0-88-generic
+            zfs: 2.3.4
+          - arch: arm64
+            platform: linux/arm64
+            kernel: 6.8.0-88-generic
+            zfs: 2.2.8
     steps:
       - uses: actions/checkout@v4
       - name: Set up QEMU for cross-platform builds
@@ -131,6 +139,14 @@ jobs:
             platform: linux/arm64
             zfs: 2.2.8
             kernel: 6.8.0-64-generic
+          - arch: arm64
+            platform: linux/arm64
+            zfs: 2.3.4
+            kernel: 6.8.0-88-generic
+          - arch: arm64
+            platform: linux/arm64
+            zfs: 2.2.8
+            kernel: 6.8.0-88-generic
     steps:
       - uses: actions/checkout@v4
       - name: Set up QEMU for cross-platform builds
