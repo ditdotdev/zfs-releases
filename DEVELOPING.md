@@ -35,8 +35,8 @@ By default, it will build both for the first found kernel release, and then
 kernel only for the remainder. The '-z' option will specify the ZFS version(s)
 to build.
 
-When you add a new version, you will have to update the environment
-variables in .travis.yml.
+When you add a new kernel version, add the appropriate entry to `src/` and
+update the matrix in `.github/workflows/push.yml` if you want it built on every push.
 
 ## Testing
 
@@ -46,12 +46,28 @@ platforms (this can take a while).
 
 ## Release
 
-We build releases on Travis, with every push triggering a new build. Once a
-particular set of binaries is built, it shouldn't ever need to be updated,
-so the Travis build will pass a URL via '-b' that can be used to check if
-a releases exists in a S3 bucket. If it does, then the build is skipped.
-Artifacts are then published to said S3 bucket.
+We build releases using GitHub Actions with three workflows:
+
+1. **push.yml** - Production builds for ZFS 2.3.4 and 2.2.8 on every push
+   - Multi-architecture support (amd64 and arm64)
+   - Builds both userland and kernel modules for specific kernel versions
+   - Uses Docker Buildx with QEMU emulation for cross-platform builds
+
+2. **nightly.yml** - Nightly kernel compatibility checks for ZFS 2.1.5
+   - Runs at 5:00 AM UTC daily
+   - Tests against available Ubuntu kernels
+   - Helps detect kernel compatibility issues early
+
+3. **manual.yml** - Manual kernel builds for testing
+   - Triggered via workflow_dispatch
+   - Allows testing specific ZFS version + kernel combinations
+
+All workflows use the [zfs-builder](https://github.com/datadatdat/zfs-builder) 
+Docker image, which provides a consistent build environment with all required 
+dependencies.
+
+Once a particular set of binaries is built, it shouldn't ever need to be updated.
+Artifacts are published to an S3 bucket.
 
 If we do need to re-build a particular release, we can remove it manually via
-the S3 console, or we could add a force flag to overwrite it if this turns out
-to be a common occurrence.
+the S3 console, or trigger a manual workflow run.

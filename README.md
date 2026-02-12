@@ -1,6 +1,5 @@
 # Datadatdat ZFS builds
 
-[![Build Status](https://travis-ci.org/datadatdat/zfs-releases.svg?branch=master)](https://travis-ci.org/datadatdat/zfs-releases)
 ![GitHub last commit](https://img.shields.io/github/last-commit/datadatdat/zfs-releases)
 ![GitHub issues](https://img.shields.io/github/issues/datadatdat/zfs-releases)
 ![GitHub](https://img.shields.io/github/license/datadatdat/zfs-releases)
