@@ -40,6 +40,22 @@ jobs:
             platform: linux/arm64
             kernel: 6.8.0-88-generic
             zfs: 2.2.8
+          - arch: arm64
+            platform: linux/arm64
+            kernel: 6.8.0-90-generic
+            zfs: 2.3.4
+          - arch: arm64
+            platform: linux/arm64
+            kernel: 6.8.0-90-generic
+            zfs: 2.2.8
+          - arch: arm64
+            platform: linux/arm64
+            kernel: 6.8.0-94-generic
+            zfs: 2.3.4
+          - arch: arm64
+            platform: linux/arm64
+            kernel: 6.8.0-94-generic
+            zfs: 2.2.8
     steps:
       - uses: actions/checkout@v4
       - name: Set up QEMU for cross-platform builds
@@ -147,6 +163,23 @@ jobs:
             platform: linux/arm64
             zfs: 2.2.8
             kernel: 6.8.0-88-generic
+          - arch: arm64
+            platform: linux/arm64
+            zfs: 2.3.4
+            kernel: 6.8.0-90-generic
+          - arch: arm64
+            platform: linux/arm64
+            zfs: 2.2.8
+            kernel: 6.8.0-90-generic
+          - arch: arm64
+            platform: linux/arm64
+            zfs: 2.3.4
+            kernel: 6.8.0-94-generic
+          - arch: arm64
+            platform: linux/arm64
+            zfs: 2.2.8
+            kernel: 6.8.0-94-generic
+>>>>>>> e4258c3 (Add kernel support for 6.8.0-90 and 6.8.0-94 (Mac ARM64 Docker Desktop))
     steps:
       - uses: actions/checkout@v4
       - name: Set up QEMU for cross-platform builds
