@@ -63,7 +63,7 @@ jobs:
   build_kernel_ubuntu-24:
     name: Build Kernel (2.3.4, ${{ matrix.kernels }})
     needs: get_kernels_ubuntu-24
-    if: startsWith(github.ref, 'refs/heads/')
+    if: startsWith(github.ref, 'refs/heads/') && needs.get_kernels_ubuntu-24.outputs.matrix != '[]'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
