@@ -5,10 +5,11 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/google/go-github/v39/github"
-	"golang.org/x/oauth2"
 	"os"
 	"strings"
+
+	"github.com/google/go-github/v39/github"
+	"golang.org/x/oauth2"
 )
 
 var client *github.Client
@@ -37,21 +38,24 @@ func main() {
 			lv := strings.Split(linuxVariant, ",")
 			for _, v := range lv {
 				if strings.Contains(release.GetTagName(), v) {
-					for _, line := range strings.Split(release.GetBody(), "\r\n") {
+					for _, line := range strings.Split(release.GetBody(), "\n") {
 						if strings.Contains(line, "Linux kernel version:") {
-							kernels = append(kernels, strings.TrimPrefix(line, "- Linux kernel version: "))
+							kernels = append(kernels, strings.TrimSpace(strings.TrimPrefix(line, "- Linux kernel version: ")))
 						}
 						if strings.Contains(line, "Kernel Version:") {
-							kernels = append(kernels, strings.TrimPrefix(line, "- Kernel Version: "))
+							kernels = append(kernels, strings.TrimSpace(strings.TrimPrefix(line, "- Kernel Version: ")))
 						}
 					}
 				}
 			}
 		} else {
 			if strings.Contains(release.GetTagName(), linuxVariant) {
-				for _, line := range strings.Split(release.GetBody(), "\r\n") {
+				for _, line := range strings.Split(release.GetBody(), "\n") {
 					if strings.Contains(line, "Linux kernel version:") {
-						kernels = append(kernels, strings.TrimPrefix(line, "- Linux kernel version: "))
+						kernels = append(kernels, strings.TrimSpace(strings.TrimPrefix(line, "- Linux kernel version: ")))
+					}
+					if strings.Contains(line, "Kernel Version:") {
+						kernels = append(kernels, strings.TrimSpace(strings.TrimPrefix(line, "- Kernel Version: ")))
 					}
 				}
 			}
