@@ -23,8 +23,6 @@ func init() {
 	client = github.NewClient(tc)
 }
 
-var kernels []string
-
 func main() {
 	var linuxVariant string
 	flag.StringVar(&linuxVariant, "l", "linuxVariant", "specify linux variant")
@@ -33,37 +31,45 @@ func main() {
 	if err != nil {
 		return
 	}
+	kernels := extractKernels(releases, linuxVariant)
+	kernels = dedupe(kernels)
+	result, _ := json.Marshal(kernels)
+	fmt.Println(string(result))
+}
+
+// extractKernelVersions extracts kernel version strings from a release body.
+// It looks for lines containing "Linux kernel version:" or "Kernel Version:".
+func extractKernelVersions(body string) []string {
+	var versions []string
+	for _, line := range strings.Split(body, "\n") {
+		if strings.Contains(line, "Linux kernel version:") {
+			versions = append(versions, strings.TrimSpace(strings.TrimPrefix(line, "- Linux kernel version: ")))
+		}
+		if strings.Contains(line, "Kernel Version:") {
+			versions = append(versions, strings.TrimSpace(strings.TrimPrefix(line, "- Kernel Version: ")))
+		}
+	}
+	return versions
+}
+
+// extractKernels filters releases by linuxVariant and extracts kernel versions.
+// If linuxVariant contains commas, each comma-separated value is checked independently.
+func extractKernels(releases []*github.RepositoryRelease, linuxVariant string) []string {
+	var kernels []string
 	for _, release := range releases {
 		if strings.Contains(linuxVariant, ",") {
-			lv := strings.Split(linuxVariant, ",")
-			for _, v := range lv {
+			for _, v := range strings.Split(linuxVariant, ",") {
 				if strings.Contains(release.GetTagName(), v) {
-					for _, line := range strings.Split(release.GetBody(), "\n") {
-						if strings.Contains(line, "Linux kernel version:") {
-							kernels = append(kernels, strings.TrimSpace(strings.TrimPrefix(line, "- Linux kernel version: ")))
-						}
-						if strings.Contains(line, "Kernel Version:") {
-							kernels = append(kernels, strings.TrimSpace(strings.TrimPrefix(line, "- Kernel Version: ")))
-						}
-					}
+					kernels = append(kernels, extractKernelVersions(release.GetBody())...)
 				}
 			}
 		} else {
 			if strings.Contains(release.GetTagName(), linuxVariant) {
-				for _, line := range strings.Split(release.GetBody(), "\n") {
-					if strings.Contains(line, "Linux kernel version:") {
-						kernels = append(kernels, strings.TrimSpace(strings.TrimPrefix(line, "- Linux kernel version: ")))
-					}
-					if strings.Contains(line, "Kernel Version:") {
-						kernels = append(kernels, strings.TrimSpace(strings.TrimPrefix(line, "- Kernel Version: ")))
-					}
-				}
+				kernels = append(kernels, extractKernelVersions(release.GetBody())...)
 			}
 		}
 	}
-	kernels = dedupe(kernels)
-	kernels, err := json.Marshal(kernels)
-	fmt.Println(string(kernels))
+	return kernels
 }
 
 // https://go.dev/play/p/iyb97KcftMa
