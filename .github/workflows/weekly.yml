@@ -1,7 +1,8 @@
-name: Push
+name: Weekly Kernel Check
 
 on:
-  push:
+  schedule:
+    - cron: '0 4 * * 0'
   workflow_dispatch:
 
 permissions:
@@ -120,11 +121,6 @@ jobs:
           - arch: amd64
             zfs: 2.3.4
             kernel: 5.10.104-linuxkit
-          # Disabled: 5.15.0-25-generic has incompatible symbol exports (__x86_return_thunk, fault_in_iov_iter_readable, timer_delete_sync)
-          # See: https://github.com/datadatdat/zfs-releases/actions/runs/21638695810
-          # - arch: amd64
-          #   zfs: 2.3.4
-          #   kernel: 5.15.0-25-generic
           - arch: amd64
             zfs: 2.3.4
             kernel: 6.8.0-64-generic
@@ -140,11 +136,6 @@ jobs:
           - arch: amd64
             zfs: 2.2.8
             kernel: 5.10.104-linuxkit
-          # Disabled: 5.15.0-25-generic has incompatible symbol exports (__x86_return_thunk, fault_in_iov_iter_readable, timer_delete_sync)
-          # See: https://github.com/datadatdat/zfs-releases/actions/runs/21638695810
-          # - arch: amd64
-          #   zfs: 2.2.8
-          #   kernel: 5.15.0-25-generic
           - arch: amd64
             zfs: 2.2.8
             kernel: 6.8.0-64-generic
@@ -185,5 +176,53 @@ jobs:
         run: gunzip -c zfs-builder.tar.gz | docker load
       - name: Build
         run: ./build -k -b ${{ secrets.s3_bucket }} -a ${{ matrix.arch }} -z ${{ matrix.zfs }} ${{ matrix.kernel }}
+      - name: Publish
+        run: ./publish ${{ secrets.s3_bucket }}
+
+  get_kernels_ubuntu-24:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '^1.21'
+      - name: Setup GO environment
+        run: |
+          go mod download
+      - id: set-matrix
+        run: echo "matrix=$(go run cmd/kernels/kernels.go -l ubuntu24)" >> $GITHUB_OUTPUT
+        env:
+          GITHUB_PAT: ${{ secrets.REPO_TOKEN }}
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+
+  build_kernel_ubuntu-24:
+    name: Build Kernel (2.3.4, ${{ matrix.kernels }}, amd64)
+    needs:
+      - build_image
+      - get_kernels_ubuntu-24
+    if: startsWith(github.ref, 'refs/heads/') && needs.get_kernels_ubuntu-24.outputs.matrix != '[]'
+    runs-on: ubuntu-latest
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+    strategy:
+      fail-fast: false
+      matrix:
+        zfs:
+          - 2.3.4
+        kernels: ${{ fromJson(needs.get_kernels_ubuntu-24.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up QEMU for cross-platform builds
+        uses: docker/setup-qemu-action@v3
+      - name: Download zfs-builder image
+        uses: actions/download-artifact@v4
+        with:
+          name: zfs-builder-amd64
+      - name: Load Docker image
+        run: gunzip -c zfs-builder.tar.gz | docker load
+      - name: Build
+        run: ./build -k -b ${{ secrets.s3_bucket }} -a amd64 -z ${{ matrix.zfs }} ${{ matrix.kernels }}
       - name: Publish
         run: ./publish ${{ secrets.s3_bucket }}
