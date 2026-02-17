@@ -19,15 +19,11 @@ permissions:
   contents: read
 
 jobs:
-  build_kernel_ubuntu-manual:
-    name: Build Kernel (${{ github.event.inputs.zfs }}, ${{ github.event.inputs.kernel }}, ${{ github.event.inputs.arch }})
+  build_image:
+    name: Build ZFS Builder Image
     if: startsWith(github.ref, 'refs/heads/')
     runs-on: ubuntu-latest
-    env:
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
     steps:
-      - uses: actions/checkout@v4
       - name: Set up QEMU for cross-platform builds
         uses: docker/setup-qemu-action@v3
       - name: Set up Docker Buildx
@@ -37,11 +33,34 @@ jobs:
         with:
           repository: datadatdat/zfs-builder
           token: ${{ secrets.GO_MODULES_TOKEN }}
-          path: zfs-builder
       - name: Build zfs-builder image
-        run: |
-          cd zfs-builder
-          docker buildx build --platform linux/${{ github.event.inputs.arch }} --load -t datadatdat/zfs-builder:latest .
+        run: docker buildx build --platform linux/${{ github.event.inputs.arch }} --load -t datadatdat/zfs-builder:latest .
+      - name: Save Docker image
+        run: docker save datadatdat/zfs-builder:latest | gzip > zfs-builder.tar.gz
+      - name: Upload image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: zfs-builder
+          path: zfs-builder.tar.gz
+          retention-days: 1
+
+  build_kernel:
+    name: Build Kernel (${{ github.event.inputs.zfs }}, ${{ github.event.inputs.kernel }}, ${{ github.event.inputs.arch }})
+    needs: build_image
+    runs-on: ubuntu-latest
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up QEMU for cross-platform builds
+        uses: docker/setup-qemu-action@v3
+      - name: Download zfs-builder image
+        uses: actions/download-artifact@v4
+        with:
+          name: zfs-builder
+      - name: Load Docker image
+        run: gunzip -c zfs-builder.tar.gz | docker load
       - name: Build
         run: ./build -k -b ${{ secrets.s3_bucket }} -a ${{ github.event.inputs.arch }} -z ${{ github.event.inputs.zfs }} ${{ github.event.inputs.kernel }}
       - name: Publish
