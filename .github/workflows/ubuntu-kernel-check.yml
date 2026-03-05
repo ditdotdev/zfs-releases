@@ -14,7 +14,7 @@ jobs:
     name: Check for new Ubuntu 22.04 (Jammy) kernels
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       
       - name: Fetch Ubuntu 22.04 release page and check for new kernels
         id: fetch
