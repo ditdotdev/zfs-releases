@@ -70,7 +70,7 @@ jobs:
       
       - name: Create issue for new kernels
         if: steps.fetch.outputs.has_new == 'true'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const newKernels = `${{ steps.fetch.outputs.new_kernels }}`.trim().split('\n');
