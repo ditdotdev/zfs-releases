@@ -56,7 +56,7 @@ jobs:
       - name: Set up QEMU for cross-platform builds
         uses: docker/setup-qemu-action@v4
       - name: Download zfs-builder image
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: zfs-builder
       - name: Load Docker image
