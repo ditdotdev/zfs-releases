@@ -81,6 +81,18 @@ jobs:
           - arch: arm64
             kernel: 6.8.0-94-generic
             zfs: 2.2.8
+          - arch: arm64
+            kernel: 6.8.0-100-generic
+            zfs: 2.3.4
+          - arch: arm64
+            kernel: 6.8.0-100-generic
+            zfs: 2.2.8
+          - arch: arm64
+            kernel: 6.8.0-101-generic
+            zfs: 2.3.4
+          - arch: arm64
+            kernel: 6.8.0-101-generic
+            zfs: 2.2.8
     steps:
       - uses: actions/checkout@v6
       - name: Set up QEMU for cross-platform builds
@@ -173,6 +185,18 @@ jobs:
           - arch: arm64
             zfs: 2.2.8
             kernel: 6.8.0-94-generic
+          - arch: arm64
+            zfs: 2.3.4
+            kernel: 6.8.0-100-generic
+          - arch: arm64
+            zfs: 2.2.8
+            kernel: 6.8.0-100-generic
+          - arch: arm64
+            zfs: 2.3.4
+            kernel: 6.8.0-101-generic
+          - arch: arm64
+            zfs: 2.2.8
+            kernel: 6.8.0-101-generic
     steps:
       - uses: actions/checkout@v6
       - name: Set up QEMU for cross-platform builds
