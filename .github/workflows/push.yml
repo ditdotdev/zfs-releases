@@ -51,12 +51,50 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # AMD64 builds
           - arch: amd64
             kernel: 6.6.71-linuxkit
             zfs: 2.3.4
           - arch: amd64
             kernel: 6.6.71-linuxkit
             zfs: 2.2.8
+          - arch: amd64
+            kernel: 6.8.0-64-generic
+            zfs: 2.3.4
+          - arch: amd64
+            kernel: 6.8.0-64-generic
+            zfs: 2.2.8
+          - arch: amd64
+            kernel: 6.8.0-88-generic
+            zfs: 2.3.4
+          - arch: amd64
+            kernel: 6.8.0-88-generic
+            zfs: 2.2.8
+          - arch: amd64
+            kernel: 6.8.0-90-generic
+            zfs: 2.3.4
+          - arch: amd64
+            kernel: 6.8.0-90-generic
+            zfs: 2.2.8
+          - arch: amd64
+            kernel: 6.8.0-94-generic
+            zfs: 2.3.4
+          - arch: amd64
+            kernel: 6.8.0-94-generic
+            zfs: 2.2.8
+          - arch: amd64
+            kernel: 6.8.0-100-generic
+            zfs: 2.3.4
+          - arch: amd64
+            kernel: 6.8.0-100-generic
+            zfs: 2.2.8
+          - arch: amd64
+            kernel: 6.8.0-101-generic
+            zfs: 2.3.4
+          - arch: amd64
+            kernel: 6.8.0-101-generic
+            zfs: 2.2.8
+          # ARM64 builds
           - arch: arm64
             kernel: 6.8.0-64-generic
             zfs: 2.3.4
@@ -141,6 +179,21 @@ jobs:
             zfs: 2.3.4
             kernel: 6.8.0-64-generic
           - arch: amd64
+            zfs: 2.3.4
+            kernel: 6.8.0-88-generic
+          - arch: amd64
+            zfs: 2.3.4
+            kernel: 6.8.0-90-generic
+          - arch: amd64
+            zfs: 2.3.4
+            kernel: 6.8.0-94-generic
+          - arch: amd64
+            zfs: 2.3.4
+            kernel: 6.8.0-100-generic
+          - arch: amd64
+            zfs: 2.3.4
+            kernel: 6.8.0-101-generic
+          - arch: amd64
             zfs: 2.2.8
             kernel: 6.6.71-linuxkit
           - arch: amd64
@@ -160,6 +213,21 @@ jobs:
           - arch: amd64
             zfs: 2.2.8
             kernel: 6.8.0-64-generic
+          - arch: amd64
+            zfs: 2.2.8
+            kernel: 6.8.0-88-generic
+          - arch: amd64
+            zfs: 2.2.8
+            kernel: 6.8.0-90-generic
+          - arch: amd64
+            zfs: 2.2.8
+            kernel: 6.8.0-94-generic
+          - arch: amd64
+            zfs: 2.2.8
+            kernel: 6.8.0-100-generic
+          - arch: amd64
+            zfs: 2.2.8
+            kernel: 6.8.0-101-generic
           # ARM64 builds
           - arch: arm64
             zfs: 2.3.4
