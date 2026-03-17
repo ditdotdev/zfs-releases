@@ -1,5 +1,7 @@
 # Plan: Prebuilt WSL2 Kernels with ZFS for Windows Users
 
+**Tracking issue:** https://github.com/datadatdat/datadatdat/issues/79
+
 ## Context
 
 Windows users of datadatdat need a custom WSL2 kernel with ZFS statically compiled in. The default WSL2 kernel ships with `CONFIG_MODULES=n`, which means **kernel modules cannot be loaded at all** — the existing zfs-releases approach of building `.ko` module files does not work for WSL2. The only viable delivery mechanism is a complete prebuilt `bzImage` with ZFS built-in.
@@ -508,21 +510,52 @@ All work is done on feature branches. PRs are only created after all local testi
 
 ### Test-Driven Development (TDD)
 
+**Strict TDD discipline**: Every bug fix and new feature follows red-green-refactor:
+1. Write a test that calls the **real function** (not a mock copy) and demonstrates the bug or expected behavior
+2. Run it — **confirm it fails** (red)
+3. Write the fix
+4. Run it — **confirm it passes** (green)
+5. Integration test: rebuild image, run `d3 install`, verify docker logs
+
+Tests must never use mock functions that bake in the fix logic. Instead, use configurable path variables (e.g., `ZFS_PROC_FILESYSTEMS`, `ZFS_SYS_MODULE_VERSION`) and PATH manipulation so the real functions are exercised with controlled inputs.
+
 **Bug fixes (Phase 0) — write failing tests FIRST, then fix:**
 
-1. **Bug 1: `is_zfs_loaded()` misses built-in ZFS**
-   - New test: `datadatdat-server/server/src/scripts/tests/test_zfs.bats`
-   - Test case: Mock `/proc/filesystems` with ZFS entry, no `lsmod` output → assert `is_zfs_loaded` returns 0
-   - Test case: No ZFS in `/proc/filesystems`, no `lsmod` output → assert `is_zfs_loaded` returns 1
-   - Test case: ZFS in `lsmod` → assert `is_zfs_loaded` returns 0 (existing behavior preserved)
+1. **Bug 1: `is_zfs_loaded()` misses built-in ZFS** ✅ VERIFIED
+   - Test file: `datadatdat-server/server/src/scripts/tests/test_zfs.bats`
+   - Tests call the **real** `is_zfs_loaded()` and `get_running_zfs_version()` from zfs.sh
+   - System paths redirected via `ZFS_PROC_FILESYSTEMS` and `ZFS_SYS_MODULE_VERSION` env vars
+   - `lsmod` and `zfs` commands overridden via PATH manipulation
+   - TDD RED: Tests 2 ("built into kernel") and 6 ("fallback to zfs command") **fail** against unfixed code
+   - TDD GREEN: All 12 tests **pass** after fix
 
-2. **Bug 2: Wrong-arch zfs-builder image**
-   - Test: CI workflow step that verifies `docker inspect datadatdat/zfs-builder:latest --format '{{.Architecture}}'` matches runner arch
+2. **Bug 2: Wrong-arch zfs-builder image** ✅ VERIFIED
+   - Fix: `--platform linux/$arch` added to launcher's `docker run` command
+   - Fix: New multi-arch push workflow in zfs-builder (`.github/workflows/push.yml`)
+   - Integration tested: `d3 install` no longer shows platform mismatch warning
 
-3. **Bug 3: `check_zfs_availability()` too strict in container**
-   - New test: `zfs-builder/src/tests/test_build.bats`
-   - Test case: `/proc/filesystems` has ZFS, no `/dev/zfs`, no `zpool` → assert build is skipped
-   - Test case: No ZFS anywhere → assert build proceeds
+3. **Bug 3: `check_zfs_availability()` too strict in container** ✅ VERIFIED
+   - Test file: `zfs-builder/src/tests/test_build.bats`
+   - Tests call the **real** `check_zfs_availability()` from build.sh (extracted via `sed`)
+   - System paths redirected via `ZFS_PROC_FILESYSTEMS` and `ZFS_DEV_ZFS` env vars
+   - TDD RED: Test 1 ("kernel-only ZFS") **fails** against buggy all-three-required logic
+   - TDD GREEN: All 4 tests **pass** after fix
+
+**Integration test results (2026-03-17):**
+```
+# Before fix (docker logs datadatdat-docker-launch):
+DATADATDAT START Checking if compatible ZFS is running
+ZFS is not currently loaded
+...5 fallback steps, pulls zfs-builder, 10+ seconds...
+DATADATDAT FINISHED
+
+# After fix:
+DATADATDAT START Checking if compatible ZFS is running
+System is running ZFS version 2.1.5-1     ← Detected immediately
+DATADATDAT END
+DATADATDAT START Creating shared mounts
+DATADATDAT FINISHED                        ← <2 seconds total
+```
 
 **New functionality — write tests alongside code:**
 
@@ -541,11 +574,15 @@ All work is done on feature branches. PRs are only created after all local testi
 
 Before creating any PR, run:
 ```bash
-# datadatdat-server
+# datadatdat-server — unit tests
 cd datadatdat-server && bats server/src/scripts/tests/
 
-# zfs-builder
+# zfs-builder — unit tests
 cd zfs-builder && bats src/tests/
+
+# Integration test — rebuild image and verify
+cd datadatdat-server && ./gradlew rebuildDockerServer
+d3 install  # verify "System is running ZFS version" in launcher logs
 
 # datadatdat (full E2E on the branch)
 cd datadatdat && make e2e && make e2e-server
