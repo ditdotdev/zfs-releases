@@ -1,0 +1,178 @@
+name: WSL2 Kernel Monitor
+
+on:
+  schedule:
+    - cron: '0 6 * * *'  # Daily at 6am UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check_wsl2_kernels:
+    name: Check for new WSL2 kernel releases
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Fetch WSL2 kernel releases and check for new versions
+        id: fetch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Get all WSL2 kernel release tags from Microsoft
+          echo "Fetching WSL2 kernel releases from Microsoft..."
+          RELEASES=$(gh api repos/microsoft/WSL2-Linux-Kernel/releases \
+            --paginate --jq '.[].tag_name' | sort -V)
+
+          echo "All WSL2 kernel releases:"
+          echo "$RELEASES"
+
+          # Get known versions from our tracking file
+          KNOWN_FILE="wsl2-known-versions.txt"
+          if [ -f "$KNOWN_FILE" ]; then
+            KNOWN=$(cat "$KNOWN_FILE")
+          else
+            KNOWN=""
+          fi
+
+          echo "Known versions:"
+          echo "$KNOWN"
+
+          # Find new releases
+          NEW_VERSIONS=""
+          for tag in $RELEASES; do
+            if ! echo "$KNOWN" | grep -q "^${tag}$"; then
+              NEW_VERSIONS="${NEW_VERSIONS}${tag}\n"
+            fi
+          done
+
+          if [ -n "$NEW_VERSIONS" ]; then
+            echo "new_versions<<EOF" >> "$GITHUB_OUTPUT"
+            echo -e "$NEW_VERSIONS" | grep -v '^$' >> "$GITHUB_OUTPUT"
+            echo "EOF" >> "$GITHUB_OUTPUT"
+            echo "has_new=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No new WSL2 kernel versions found"
+            echo "has_new=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check for new OpenZFS releases
+        id: fetch_zfs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Get recent stable OpenZFS releases (2.x.x only)
+          echo "Fetching OpenZFS releases..."
+          ZFS_RELEASES=$(gh api repos/openzfs/zfs/releases \
+            --paginate --jq '.[].tag_name' | grep '^zfs-2\.' | sort -V)
+
+          echo "OpenZFS 2.x releases:"
+          echo "$ZFS_RELEASES"
+
+          # Check which ZFS versions are in our wsl2.yml matrix
+          CURRENT_ZFS=$(grep "zfs:" .github/workflows/wsl2.yml | grep -oE "'[0-9]+\.[0-9]+\.[0-9]+'" | tr -d "'" | sort -u)
+
+          echo "Current ZFS versions in matrix:"
+          echo "$CURRENT_ZFS"
+
+          # Find ZFS versions newer than our latest
+          LATEST_CURRENT=$(echo "$CURRENT_ZFS" | tail -1)
+          NEW_ZFS=""
+          for tag in $ZFS_RELEASES; do
+            ver="${tag#zfs-}"
+            if [ "$(printf '%s\n' "$LATEST_CURRENT" "$ver" | sort -V | tail -1)" = "$ver" ] && [ "$ver" != "$LATEST_CURRENT" ]; then
+              NEW_ZFS="${NEW_ZFS}${ver}\n"
+            fi
+          done
+
+          if [ -n "$NEW_ZFS" ]; then
+            echo "new_zfs<<EOF" >> "$GITHUB_OUTPUT"
+            echo -e "$NEW_ZFS" | grep -v '^$' >> "$GITHUB_OUTPUT"
+            echo "EOF" >> "$GITHUB_OUTPUT"
+            echo "has_new_zfs=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_new_zfs=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create issue for new WSL2 kernels
+        if: steps.fetch.outputs.has_new == 'true'
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const newVersions = `${{ steps.fetch.outputs.new_versions }}`.trim().split('\n');
+            const versionList = newVersions.map(v => `- \`${v}\``).join('\n');
+
+            const matrixSnippet = newVersions.map(tag => {
+              // Derive kernel_release from tag: linux-msft-wsl-X.Y.Z.W -> X.Y.Z.W-microsoft-standard-WSL2
+              const version = tag.replace('linux-msft-wsl-', '');
+              return `          - wsl_tag: ${tag}\n            kernel_release: ${version}-microsoft-standard-WSL2\n            kernel_version: '${version}'\n            zfs: '2.3.4'`;
+            }).join('\n');
+
+            const issueBody = `## New WSL2 Kernel Release Detected
+
+            The following WSL2 kernel version(s) are available from Microsoft but not yet in our build matrix:
+
+            ${versionList}
+
+            **Source:** [microsoft/WSL2-Linux-Kernel releases](https://github.com/microsoft/WSL2-Linux-Kernel/releases)
+
+            ### Action Required
+
+            1. Add to \`.github/workflows/wsl2.yml\` matrix (both \`build_wsl2_kernel\` and \`publish_draft_release\` jobs):
+               \`\`\`yaml
+            ${matrixSnippet}
+               \`\`\`
+
+            2. Add to \`wsl2-known-versions.txt\`
+
+            3. Trigger \`wsl2.yml\` via workflow_dispatch to build
+
+            4. Run Vagrant E2E test: \`test-wsl2-kernel.ps1 -ReleaseTag <tag>\`
+
+            5. On all-pass, promote draft release to published
+
+            ---
+            *This issue was automatically created by the WSL2 Kernel Monitor workflow.*`;
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `New WSL2 kernel available: ${newVersions.join(', ')}`,
+              body: issueBody
+            });
+
+      - name: Create issue for new OpenZFS version
+        if: steps.fetch_zfs.outputs.has_new_zfs == 'true'
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const newZfs = `${{ steps.fetch_zfs.outputs.new_zfs }}`.trim().split('\n');
+            const zfsList = newZfs.map(v => `- \`${v}\``).join('\n');
+
+            const issueBody = `## New OpenZFS Release Detected
+
+            The following OpenZFS version(s) are newer than what's in our WSL2 build matrix:
+
+            ${zfsList}
+
+            **Source:** [openzfs/zfs releases](https://github.com/openzfs/zfs/releases)
+
+            ### Action Required
+
+            New ZFS versions require rebuilding ALL kernels in the WSL2 matrix:
+
+            1. Update \`zfs-builder/src/wsl.sh\` default ZFS version if appropriate
+            2. Add new ZFS version entries to \`.github/workflows/wsl2.yml\` matrix
+            3. Trigger builds and run Vagrant E2E validation
+
+            ---
+            *This issue was automatically created by the WSL2 Kernel Monitor workflow.*`;
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `New OpenZFS release: ${newZfs.join(', ')}`,
+              body: issueBody
+            });
