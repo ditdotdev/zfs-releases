@@ -389,33 +389,53 @@ Daily check workflow (similar to existing `ubuntu-kernel-check.yml`) that monito
 
 ### Phase 7: Vagrant + Hyper-V test infrastructure (datadatdat repo)
 
-**New directory:** `datadatdat/tests/wsl2-kernel/`
+**Directory:** `datadatdat/tests/wsl2-kernel/`
+
+```
+datadatdat/tests/wsl2-kernel/
++-- .gitattributes           # Force LF line endings for .sh files
++-- Vagrantfile              # Windows 11 box, Hyper-V provider, nested virt
++-- provision-wsl2.ps1       # Two-phase: enable features (pre-reboot) + install distro/tools (post-reboot)
++-- deploy-kernel.ps1        # Copy bzImage, configure .wslconfig, restart WSL2, verify ZFS
++-- run-e2e.sh               # Run inside WSL2: kernel checks, make e2e, make e2e-server
++-- test-wsl2-kernel.ps1     # Orchestrator: vagrant up -> provision -> test -> destroy
++-- Register-TestTasks.ps1   # One-time setup: register Scheduled Tasks for autonomous testing
++-- README.md                # Usage instructions
+```
 
 **Vagrantfile:**
-- Box: `gusztavvargadr/windows-11` (or similar Windows 11 evaluation box)
-- Provider: Hyper-V with nested virtualization enabled
-- Memory: 4GB+ (WSL2 needs headroom)
-- Synced folder: share the bzImage into the VM
+- Box: `gusztavvargadr/windows-11`
+- Provider: Hyper-V with nested virtualization, 8GB RAM, 4 CPUs
+- Network: Default Switch (auto-selected, no interactive prompt)
+- File provisioner uploads test files (no SMB - avoids Windows password requirement)
 
-**provision-wsl2.ps1** (runs inside the VM):
-- Enable Windows features: `Microsoft-Windows-Subsystem-Linux`, `VirtualMachinePlatform`
-- Reboot VM
-- `wsl --install -d Ubuntu` (or `wsl --install --no-distribution` + manual import)
-- Wait for WSL2 to be ready
+**provision-wsl2.ps1** (two-phase, runs inside the VM):
+- **Phase 1 (pre-reboot):** Enable `Microsoft-Windows-Subsystem-Linux` + `VirtualMachinePlatform` features, install WSL subsystem via `wsl --install --no-distribution`
+- **Phase 2 (post-reboot):** Auto-detects WSL is functional, installs Ubuntu distro, Docker Engine (via `curl -fsSL https://get.docker.com | sh` - much faster than Docker Desktop), Go, Git, BATS, Make + build tools
 
 **deploy-kernel.ps1** (runs inside the VM):
 - Copy bzImage to `C:\Users\vagrant\.datadatdat\kernels\`
 - Create/update `.wslconfig` with `kernel=` path
-- `wsl --shutdown`
+- `wsl --shutdown`, verify kernel version and ZFS detection
 
 **run-e2e.sh** (runs inside WSL2 in the VM):
-- Verify `uname -r` matches expected kernel
-- Verify `grep zfs /proc/filesystems`
+- Verify `uname -r` matches expected kernel, `grep zfs /proc/filesystems`
 - Clone datadatdat repo, build d3 CLI (`make build`)
 - Run `setup-zfs-pools.sh` to create ZFS pools
-- Run `make e2e` — full E2E suite: install, getting-started, tags, docker-context, container-lifecycle, data-import, S3 workflow, SSH workflow, upgrade, uninstall
-- Run `make e2e-server` (if datadatdat-server is available) — server workflows: auth, org, billing, clone-commit, fork, push-pull-tags
+- Run `make e2e` + `make e2e-server`
 - Exit 0 on all pass, non-zero on failure
+
+**test-wsl2-kernel.ps1** (orchestrator, runs on host):
+- Timestamped output on every line (`[HH:mm:ss]` prefix + elapsed time)
+- Two-phase provisioning: `vagrant up` (Phase 1) -> `vagrant reload` -> re-upload files -> `vagrant provision --provision-with wsl2` (Phase 2)
+- False positive guard: verifies WSL2 Ubuntu is functional after E2E step
+- Exit code propagation: e2e provisioner wraps WSL call in PowerShell to capture exit code
+
+**Key design decisions:**
+- Docker Engine in WSL2 instead of Docker Desktop (~50MB vs ~600MB, installs in seconds)
+- File provisioner instead of SMB synced folder (avoids Windows password requirement for Microsoft accounts)
+- `.gitattributes` forces LF line endings on `.sh` files (prevents CRLF errors when bash runs inside WSL2)
+- No em dashes or non-ASCII characters in .ps1 files (PowerShell parser chokes on them)
 
 **test-wsl2-kernel.ps1** (orchestrator, runs on host):
 ```powershell
@@ -452,6 +472,164 @@ param(
 - Links to source repos: microsoft/WSL2-Linux-Kernel, openzfs/zfs, datadatdat/zfs-builder
 - Included as a release asset with each GitHub Release
 
+### Phase 8: Autonomous Vagrant E2E testing (datadatdat repo)
+
+**Problem:** Claude Code cannot run Vagrant/Hyper-V commands because they require admin privileges, and Claude's shell is non-elevated. Manual testing requires the user to run `test-wsl2-kernel.ps1` in an elevated PowerShell and paste results back.
+
+**Solution:** Use Windows Scheduled Tasks as an elevation mechanism. Tasks are pre-registered to "Run with highest privileges" and triggered on-demand via `schtasks /run` (no elevation needed to trigger).
+
+**New file:** `datadatdat/tests/wsl2-kernel/Register-TestTasks.ps1`
+
+Run once in an elevated PowerShell to register one Scheduled Task per kernel version:
+- `D3-Test-WSL2-5.15`
+- `D3-Test-WSL2-6.1`
+- `D3-Test-WSL2-6.6`
+- `D3-Vagrant-Destroy` (cleanup utility)
+
+Each task:
+- Runs `test-wsl2-kernel.ps1` with the corresponding bzImage path
+- Runs as the current user with highest privileges (S4U logon)
+- Logs all output to `C:\Users\rober\.datadatdat\test-logs\wsl2-{version}-{timestamp}.log`
+- No schedule trigger (on-demand only)
+
+**Claude's autonomous test flow:**
+```bash
+# 1. Download artifact to known location
+gh run download <ID> --repo datadatdat/zfs-releases --name <artifact> --dir test-artifacts/6.6
+
+# 2. Trigger the pre-registered task (no elevation needed)
+schtasks /run /tn "D3-Test-WSL2-6.6"
+
+# 3. Monitor the log file for progress
+tail -f ~/.datadatdat/test-logs/wsl2-6.6-*.log
+
+# 4. Check result when complete
+grep "ALL TESTS PASSED\|TESTS FAILED" ~/.datadatdat/test-logs/wsl2-6.6-*.log
+```
+
+**Log file convention:**
+```
+C:\Users\rober\.datadatdat\test-logs\
+  wsl2-5.15-20260319-101300.log
+  wsl2-6.1-20260319-103000.log
+  wsl2-6.6-20260319-105500.log
+```
+
+**Adding new kernel versions:**
+When `wsl2-kernel-check.yml` (Phase 3) detects a new WSL2 kernel release:
+1. Claude adds the version to the `wsl2.yml` build matrix
+2. Claude triggers the build workflow via `gh workflow run`
+3. Claude downloads the bzImage to `test-artifacts/{version}/`
+4. User re-runs `Register-TestTasks.ps1` to add the new task (one-time, elevated)
+5. All future tests for that version are fully autonomous
+
+**Limitations:**
+- One-time elevated setup required (run `Register-TestTasks.ps1`)
+- User must be logged in for tasks to execute (S4U logon type)
+- Only one Vagrant VM at a time (Hyper-V resource constraint)
+
+### Phase 9: PowerShell linting with PSScriptAnalyzer (datadatdat repo)
+
+**Problem:** PowerShell scripts have no linting in CI. Issues like `Write-Host` bypassing the output pipeline, empty catch blocks, unused parameters, and automatic variable overwrites go undetected. `Write-Host` is particularly problematic - it writes directly to the host UI, which means output can't be captured by redirects, `Start-Transcript`, or non-interactive hosts like Scheduled Tasks and CI runners.
+
+**PSScriptAnalyzer scan results (114 warnings across 7 scripts):**
+
+| Rule | Count | Action |
+|------|-------|--------|
+| `PSAvoidUsingWriteHost` | 99 | **Fix** - Replace with `Write-Information` (capturable, supports colors via PS 5.0+) |
+| `PSAvoidUsingEmptyCatchBlock` | 7 | **Fix** - Add comments or logging |
+| `PSUseApprovedVerbs` | 2 | **Review** - Custom function names |
+| `PSReviewUnusedParameter` | 2 | **Fix** - Remove dead parameters |
+| `PSAvoidAssignmentToAutomaticVariable` | 2 | **Fix** - Rename variables |
+| `PSUseSingularNouns` | 1 | **Suppress** - `Get-AvailableReleases` is intentional |
+| `PSUseShouldProcessForStateChangingFunctions` | 1 | **Suppress** - Overkill for internal scripts |
+
+**Files to fix:**
+- `scripts/Install-D3Kernel.ps1` (36 warnings)
+- `tests/wsl2-kernel/provision-wsl2.ps1` (17 warnings)
+- `tests/wsl2-kernel/Register-TestTasks.ps1` (17 warnings)
+- `utils/docker_switch.ps1` (14 warnings)
+- `utils/virtualbox_switch.ps1` (11 warnings)
+- `tests/wsl2-kernel/deploy-kernel.ps1` (10 warnings)
+- `tests/wsl2-kernel/test-wsl2-kernel.ps1` (9 warnings)
+
+**CI integration - add to `.github/workflows/pull-request-2.yml`:**
+```yaml
+- name: PSScriptAnalyzer
+  shell: pwsh
+  run: |
+    Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser
+    $results = @()
+    Get-ChildItem -Recurse -Filter *.ps1 | ForEach-Object {
+      $results += Invoke-ScriptAnalyzer -Path $_.FullName -Severity Error,Warning
+    }
+    if ($results) {
+      $results | Format-Table -AutoSize
+      throw "$($results.Count) PSScriptAnalyzer issues found"
+    }
+```
+
+**Suppressions:** Use `[Diagnostics.CodeAnalysis.SuppressMessageAttribute()]` for intentional deviations, not blanket exclusions.
+
+### Phase 10: Golden VM image for fast E2E iterations (datadatdat repo)
+
+**Problem:** Every test run rebuilds the VM from scratch - downloading the Windows 11 box, enabling WSL2 features, rebooting, installing Ubuntu, Docker Engine, Go, BATS, SSH keys, and cloning the repo. This takes ~20 minutes before tests even start.
+
+**Solution:** Build a "golden image" once with all dependencies pre-installed, then `vagrant package` it into a custom box. Subsequent test runs boot from the golden image (~2 min) and only pull the latest code + deploy the new kernel.
+
+**One-time golden image creation:**
+```powershell
+# 1. Build the fully-provisioned VM
+cd datadatdat\tests\wsl2-kernel
+.\test-wsl2-kernel.ps1 -BzImagePath <any-bzImage> -KeepVM
+
+# 2. After provisioning completes (before or after E2E), package the VM
+vagrant package --output d3-wsl2-golden.box
+
+# 3. Register the golden box locally
+vagrant box add d3/wsl2-golden d3-wsl2-golden.box
+
+# 4. Clean up
+vagrant destroy -f
+```
+
+**Fast test run (~5 min instead of ~25 min):**
+```powershell
+# Vagrantfile switches to golden box when available:
+#   config.vm.box = "d3/wsl2-golden"   (instead of "gusztavvargadr/windows-11")
+# Skips all provisioning, goes straight to deploy-kernel + e2e
+
+.\test-wsl2-kernel.ps1 -BzImagePath <new-bzImage> -FastMode
+```
+
+**What `-FastMode` does:**
+1. Boot golden VM (~2 min - no WSL2/Docker/Go install needed)
+2. Upload bzImage via file provisioner
+3. `git pull` inside WSL2 to get latest d3 code (~seconds)
+4. `make build` to rebuild d3 CLI
+5. Deploy kernel + run E2E tests
+6. Total: ~5 min vs ~25 min
+
+**When to rebuild the golden image:**
+- Go version upgrade (e.g., 1.25.1 -> 1.26.0)
+- Docker Engine major version change
+- Ubuntu distro upgrade
+- New test dependencies added
+- Roughly: once per release cycle, not every test run
+
+**Files to modify:**
+- `test-wsl2-kernel.ps1` - Add `-FastMode` switch, detect golden box availability
+- `Vagrantfile` - Support both `gusztavvargadr/windows-11` (full provision) and `d3/wsl2-golden` (fast mode)
+- `run-e2e.sh` - Use `git pull` when repo already exists (already handles this)
+- `Register-TestTasks.ps1` - Add fast-mode variants of scheduled tasks
+
+**Golden image contents (pre-installed):**
+- Windows 11 with WSL2 + VirtualMachinePlatform features enabled
+- Ubuntu distro with Docker Engine, Go, BATS, Make, build-essential
+- SSH keys for GitHub access
+- datadatdat repo cloned at `/home/root/datadatdat`
+- Git configured for the datadatdat org
+
 ## Critical Files
 
 | File | Repo | Action |
@@ -465,8 +643,11 @@ param(
 | `tests/wsl2-kernel/test-wsl2-kernel.ps1` | datadatdat | New: orchestrator script |
 | `tests/wsl2-kernel/provision-wsl2.ps1` | datadatdat | New: WSL2 installation in VM |
 | `tests/wsl2-kernel/deploy-kernel.ps1` | datadatdat | New: bzImage deploy + .wslconfig |
-| `tests/wsl2-kernel/smoke-test.sh` | datadatdat | New: ZFS validation inside WSL2 |
+| `tests/wsl2-kernel/run-e2e.sh` | datadatdat | New: E2E tests inside WSL2 |
+| `tests/wsl2-kernel/Register-TestTasks.ps1` | datadatdat | New: Scheduled Task registration for autonomous testing |
+| `tests/wsl2-kernel/.gitattributes` | datadatdat | New: Force LF line endings for .sh files |
 | `scripts/Install-D3Kernel.ps1` | datadatdat | New: PowerShell installer for users |
+| `.github/workflows/pull-request-2.yml` | datadatdat | Modify: add PSScriptAnalyzer step to Code Quality job |
 | `wsl-kernel-zfs.md` | datadatdat | Update: add prebuilt quick start, explain CONFIG_MODULES=n |
 | `cleanslate/README.md` | datadatdat | Update: reference prebuilt kernels |
 | `WSL2-LICENSE.md` | zfs-releases | New: composite license |
@@ -595,16 +776,19 @@ cd datadatdat && make e2e && make e2e-server
 | **datadatdat-server** | 0 | Fix `zfs.sh` built-in ZFS detection |
 | **zfs-builder** | 0, 1 | Fix `build.sh` + arch issue; make `wsl.sh` CI-compatible |
 | **zfs-releases** | 2, 3, 6 | New workflows (`wsl2.yml`, `wsl2-kernel-check.yml`), licensing |
-| **datadatdat** | 4, 5, 7 | Installer script, docs, Vagrant test infrastructure |
+| **datadatdat** | 4, 5, 7, 8, 9, 10 | Installer script, docs, Vagrant test infrastructure, autonomous testing, PS linting, golden VM image |
 
 ## Execution Order
 
 0. **Persist this plan** as `PREBUILT-WSL2-KERNELS.md` in the root of zfs-releases repo
-1. **Phase 0** (fix built-in ZFS detection in launcher) — immediate bug fix, independent of other phases
-2. **Phase 1** (wsl.sh CI fixes) — must come before Phase 2
-3. **Phase 2** (wsl2.yml workflow) — depends on Phase 1
-4. **Phase 6** (licensing) — parallel with Phase 2
-5. **Phase 3** (version monitoring) — parallel with Phase 2
-6. **Phase 7** (Vagrant test infra) — parallel with Phase 2, needed before first release
-7. **Phase 4** (installer) — depends on Phase 2 (needs releases to exist)
-8. **Phase 5** (docs) — last, after everything works
+1. **Phase 0** (fix built-in ZFS detection in launcher) - immediate bug fix, independent of other phases
+2. **Phase 1** (wsl.sh CI fixes) - must come before Phase 2
+3. **Phase 2** (wsl2.yml workflow) - depends on Phase 1
+4. **Phase 6** (licensing) - parallel with Phase 2
+5. **Phase 3** (version monitoring) - parallel with Phase 2
+6. **Phase 7** (Vagrant test infra) - parallel with Phase 2, needed before first release
+7. **Phase 8** (autonomous testing) - depends on Phase 7, enables Claude to run E2E tests
+8. **Phase 9** (PS linting) - fix PSScriptAnalyzer warnings, add to CI Code Quality check
+9. **Phase 10** (golden VM image) - depends on Phase 7+8, reduces test runs from ~25 min to ~5 min
+10. **Phase 4** (installer) - depends on Phase 2 (needs releases to exist)
+11. **Phase 5** (docs) - last, after everything works
