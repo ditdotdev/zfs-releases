@@ -1,4 +1,6 @@
-# Plan: ZFS Module Loading via insmod for WSL2 + Package Manager Cleanup
+# Plan: ZFS Module Loading via insmod for WSL2
+
+**Tracking issue:** https://github.com/datadatdat/datadatdat/issues/79
 
 ## Context
 
@@ -9,10 +11,12 @@ We proved that on modern WSL2 (kernel >= 6.6.36.3 with `CONFIG_MODULES=y`), ZFS 
 2. `insmod spl.ko && insmod zfs.ko` works from WSL2 directly
 3. `docker run --privileged -v /path/to/modules:/zfs-modules ubuntu insmod /zfs-modules/spl.ko && insmod /zfs-modules/zfs.ko` works from a container
 4. `apt install zfsutils-linux` provides userland tools (zpool, zfs commands)
+5. Full E2E tests pass (147/147) on WSL2 with stock Microsoft kernel 6.6.87.2
+6. ZFS modules download from S3 and load automatically via the launch container's 4-step fallback chain
 
-**Why this matters:** The current launch container's `modprobe zfs` fails on WSL2 because `/lib/modules/<kernel>/` has no ZFS `.ko` — Microsoft doesn't ship kernel headers, so DKMS can't compile them, and `apt install zfsutils-linux` only provides userland tools, not the kernel module.
+**Key discovery: ZFS kernel module version must match userland tools version.** Mismatched versions (e.g., kmod 2.4.1 + userland 2.2.2) cause `zpool create` to fail with misleading errors.
 
-**The solution:** Pre-build ZFS `.ko` modules for each WSL2 kernel version, distribute via zfs-releases S3 bucket, and have the launch container `insmod` them when `modprobe` fails.
+**Key discovery: WSL2 `zpool create` fails with file-backed vdevs.** Must use `losetup` to create a loop device first, then pass the loop device to `zpool create`.
 
 ## WSL2 Release / Kernel Compatibility Matrix
 
@@ -30,158 +34,206 @@ Only WSL releases with `CONFIG_MODULES=y` kernels are supported (>= WSL 2.5.1 / 
 
 **Unsupported:** WSL 2.3.x, 2.4.x (ship with 5.15.x kernels, no CONFIG_MODULES=y). Users on these versions should run `wsl --update` to upgrade.
 
-**Key dates:**
-- 2024-07-02: `linux-msft-wsl-6.6.36.3` — first kernel with CONFIG_MODULES=y
-- 2025-02-11: `linux-msft-wsl-6.6.75.1` — modules distributed as VHD
-- 2025-03-12: WSL 2.5.1 — first WSL release shipping modules-as-VHD
-
-## New ZFS Loading Chain (4 steps)
+## ZFS Loading Chain (4 steps)
 
 ```
-Step 1: ZFS already loaded?        (KEEP - check_running_zfs)
+Step 1: ZFS already loaded?        (check_running_zfs)
   |
-Step 2: Host system modules?       (KEEP - load_zfs via modprobe)
+Step 2: Host system modules?       (load_zfs via modprobe)
   |
-Step 3: Package manager install?   (KEEP - apt install zfsutils-linux + modprobe)
+Step 3: Package manager install?   (apt/dnf/pacman + modprobe)
   |
-Step 4: insmod prebuilt modules?   (NEW - for WSL2 and other non-standard kernels)
-         a. Download spl.ko + zfs.ko for $(uname -r) from zfs-releases S3 bucket
+Step 4: insmod prebuilt modules?   (download from S3 + insmod)
+         a. Download spl.ko + zfs.ko for $(uname -r) from S3
          b. insmod spl.ko && insmod zfs.ko
          c. Install zfsutils-linux for userland if not present
 ```
 
-Step 3 works on standard Linux (GH Actions, bare metal Ubuntu, etc.).
-Step 4 is the WSL2-specific fallback when modprobe fails because no matching .ko exists in /lib/modules/.
+## Completed Work
 
-## Repos and Branches
+### Phase 1: datadatdat-server changes (PR #98 — MERGED)
+- Simplified zfs.sh: 4-step chain replacing old 5-step chain
+- Added `install_zfs_packages()` with package manager detection
+- Added `insmod_prebuilt_zfs()` with S3 download + insmod
+- Fixed `zpool create` on WSL2 with loop device fallback
+- Fixed all shellcheck warnings in zfs.sh and launch
+- Removed `get-userland` dependency on deleted `get_zfs_build_version`
+- 28/28 BATS tests pass
+- 147/147 E2E tests pass on WSL2
 
-| Repo | Branch | Scope |
-|------|--------|-------|
-| `datadatdat-server` | `simplify/zfs-insmod-loading` | zfs.sh changes, launch script, BATS tests |
-| `zfs-releases` | `feature/wsl2-module-builds` | CI workflow, S3 publishing, plan .MD |
-| `datadatdat` | `update/install-flow-docs` | DATADATDAT_INSTALL_FLOW.md update |
+### Phase 2: Install flow documentation (PR #85 — MERGED)
+- Updated DATADATDAT_INSTALL_FLOW.md with 4-step chain
+- Added WSL2 notes for loop device pool creation
+- Removed zfs-builder from Docker images table
 
-## Files to Modify
+### Phase 3: CI workflow for WSL2 module builds (PR #64 — MERGED)
+- Added `wsl2-modules.yml` workflow
+- Successfully built and published ZFS 2.2.2 modules for kernel 6.6.87.2 to S3
+- Full E2E validated: fresh `d3 install` downloads from S3 and loads via insmod
 
-### 1. `datadatdat-server/server/src/scripts/zfs.sh`
+## Remaining Work
 
-**Remove:**
-- `get_zfs_build_version()` — hardcoded S3/build version
-- `load_precompiled_zfs()` — old S3 download logic for full module tarballs
-- `compile_and_load_zfs()` — zfs-builder Docker invocation
-- Any S3 URL construction for the old module format
+### Phase 4: Build latest ZFS with kernel modules + userland tools
 
-**Add:**
-- `install_zfs_packages()` — Pre-flight checks + `apt install zfsutils-linux` + `modprobe zfs`
-  - Detect package manager (apt/dnf/pacman/apk)
-  - Check CONFIG_MODULES=y
-  - Check ZFS packages in repos
-  - Install + modprobe
-- `insmod_prebuilt_zfs()` — Download + insmod for WSL2/non-standard kernels
-  - Download `spl.ko` + `zfs.ko` for `$(uname -r)` from zfs-releases S3 bucket
-  - Cache to `/var/lib/datadatdat/data/modules/$(uname -r)/`
-  - `insmod spl.ko && insmod zfs.ko`
-  - Install `zfsutils-linux` for userland tools if not already present
+**Goal:** Build the latest stable ZFS version from source, producing both kernel modules (`spl.ko` + `zfs.ko`) and userland tools (`zpool`, `zfs`, libs). Package together in a single archive per kernel version.
 
-**Keep unchanged:**
-- `is_zfs_loaded()` (includes built-in ZFS detection from PR #91)
-- `check_running_zfs()` — Step 1
-- `load_zfs()` — Step 2
-- All pool management functions
-- All verification/sanity functions
-- `unload_zfs()`, `unmount_filesystems()`
+**Archive naming convention:**
+```
+zfs-<ZFS_VERSION>-modules-<KREL>.tar.gz
+```
+Example: `zfs-2.3.6-modules-6.6.87.2-microsoft-standard-WSL2.tar.gz`
 
-### 2. `datadatdat-server/server/src/scripts/launch`
+**ZFS version selection:** Query the latest stable release from `openzfs/zfs` GitHub releases API. As of 2026-03-25, the latest stable releases are:
+- `zfs-2.3.6` (latest 2.3.x LTS)
+- `zfs-2.4.1` (latest 2.4.x)
 
-**Remove:**
-- Docker Desktop LinuxKit special case
-- `COMPILED_MODULES` variable references
+Use the latest 2.x stable release. Both kernel modules and userland must be built from the same version.
 
-**Update fallback chain:**
-```bash
-if ! check_running_zfs &&
-   ! load_zfs $SYSTEM_MODULES system $INSTALL_DIR &&
-   ! install_zfs_packages $INSTALL_DIR &&
-   ! insmod_prebuilt_zfs $INSTALL_DIR; then
-    log_error "Failed to load ZFS. See docs for manual installation."
-fi
+**Archive contents:**
+```
+spl.ko           # Kernel module
+zfs.ko           # Kernel module
+sbin/zpool       # Userland
+sbin/zfs         # Userland
+lib/              # Shared libraries (libzfs, libnvpair, etc.)
+VERSION          # Text file: ZFS_VERSION=2.3.6 KREL=6.6.87.2-microsoft-standard-WSL2
 ```
 
-### 3. `zfs-releases` — CI pipeline for building .ko modules
+**Update `insmod_prebuilt_zfs()` in zfs.sh** to:
+1. Download the combined archive (not just .ko files)
+2. `insmod` the kernel modules
+3. Install userland tools from the archive (not from apt)
+4. Ensures version match between kernel module and userland
 
-**New workflow: `.github/workflows/wsl2-modules.yml`**
+### Phase 5: Build matrix for all WSL2 kernel versions
 
-Builds `spl.ko` + `zfs.ko` for each supported WSL2 kernel version:
-1. Clone WSL2-Linux-Kernel source for target version
-2. `make olddefconfig && make modules_prepare && make -j$(nproc) modules`
-3. Clone OpenZFS, `./configure --with-linux=... && make -j$(nproc)`
-4. Package `spl.ko` + `zfs.ko` into tarball
-5. Upload to zfs-releases S3 bucket
-6. Naming: `zfs-<zfs_version>-<kernel_version>.tar.gz`
+**Goal:** Build ZFS modules for all active WSL2 kernel versions in parallel.
 
-**Initial build matrix (expand later):**
-- WSL2 kernel: 6.6.87.2 only (test against current install first)
-- ZFS version: latest stable (currently 2.4.1)
+**Build matrix:**
+```yaml
+strategy:
+  fail-fast: false
+  matrix:
+    wsl_kernel:
+      - '6.6.75.2'    # WSL 2.5.1 - 2.5.7
+      - '6.6.87.1'    # WSL 2.5.9
+      - '6.6.87.2'    # WSL 2.5.10 - 2.6.3
+      - '6.6.114.1'   # Future
+      - '6.6.123.2'   # Latest kernel release
+```
 
-**Trigger:** Manual dispatch initially. Add automated WSL2 kernel release detection later.
+**S3 cache check:** Before building, check if the archive already exists in S3:
+```bash
+aws s3api head-object --bucket $S3_BUCKET --key $ARCHIVE 2>/dev/null
+if [ $? -eq 0 ]; then
+  echo "Archive $ARCHIVE already exists in S3, skipping build"
+  exit 0
+fi
+```
+To force a rebuild, delete the archive from S3: `aws s3 rm s3://$BUCKET/$ARCHIVE`
 
-**New plan .MD:** `WSL2-ZFS-MODULES.md` in zfs-releases repo (this plan, committed to branch)
+### Phase 6: ZFS version alignment across ecosystem
 
-### 4. `datadatdat/DATADATDAT_INSTALL_FLOW.md`
+**Goal:** Unify ZFS version selection across all datadatdat repos.
 
-Update the ZFS Module Loading section to reflect the new 4-step chain and the insmod approach.
+**Current state (inconsistent):**
+- `datadatdat-server` Dockerfile: `apt install zfsutils-linux` = 2.2.2 (Ubuntu 24.04 repos)
+- `zfs-releases` build matrix: builds 2.2.8 and 2.3.4 for linuxkit/generic kernels
+- `zfs-builder`: builds 2.3.4 (hardcoded in META)
+- WSL2 module build: currently 2.2.2 to match server Dockerfile userland
 
-### 5. Cleanup — Remove from ecosystem
+**Target state:**
+- Single ZFS version defined in one place (zfs-releases)
+- All build pipelines consume this version
+- Server Dockerfile installs userland from the S3 archive (not from apt)
+- Kernel modules and userland always match
+
+### Phase 7: Manual WSL2 version testing
+
+**Goal:** Validate `d3 install` + `make e2e` across multiple WSL2 versions.
+
+**Approach:** Serial testing on the Windows host. Each WSL version requires a different kernel, and only one WSL instance runs at a time.
+
+**WSL version pinning:** WSL releases are available as MSI installers from GitHub:
+```
+https://github.com/microsoft/WSL/releases/download/<VERSION>/wsl.<VERSION>.0.x64.msi
+```
+Example: `wsl.2.5.7.0.x64.msi`
+
+**Test procedure for each WSL version:**
+
+```powershell
+# 1. Stop Docker Desktop
+Get-Process -Name "Docker*", "com.docker*" -ErrorAction SilentlyContinue | Stop-Process -Force
+
+# 2. Shutdown WSL
+wsl --shutdown
+
+# 3. Install specific WSL version
+# Download from: https://github.com/microsoft/WSL/releases/download/<VERSION>/wsl.<VERSION>.0.x64.msi
+msiexec /i wsl.<VERSION>.0.x64.msi /quiet
+
+# 4. Reset Ubuntu distro
+wsl --unregister Ubuntu
+wsl --install -d Ubuntu --no-launch
+
+# 5. Verify kernel version
+wsl -u root -e uname -r
+
+# 6. Start Docker Desktop
+& "C:\Program Files\Docker\Docker\Docker Desktop.exe"
+# Wait for Docker to be ready
+docker version
+
+# 7. Run d3 install
+./d3.exe install
+
+# 8. Run E2E tests
+make e2e
+```
+
+**Test matrix:**
+
+| WSL Version | Kernel | ZFS Archive Expected | Test Status |
+|------------|--------|---------------------|-------------|
+| 2.5.7 | 6.6.75.x | `zfs-<VER>-modules-6.6.75.2-microsoft-standard-WSL2.tar.gz` | Pending |
+| 2.5.9 | 6.6.87.1 | `zfs-<VER>-modules-6.6.87.1-microsoft-standard-WSL2.tar.gz` | Pending |
+| 2.5.10 | 6.6.87.2 | `zfs-<VER>-modules-6.6.87.2-microsoft-standard-WSL2.tar.gz` | Pending |
+| 2.6.1 | 6.6.87.x | Same as above | Pending |
+| 2.6.3 | 6.6.87.2 | `zfs-<VER>-modules-6.6.87.2-microsoft-standard-WSL2.tar.gz` | **PASS** (validated) |
+
+**Important:** After testing, restore the latest WSL version:
+```powershell
+wsl --update
+```
+
+### Phase 8: Automated WSL2 kernel detection
+
+**Goal:** Auto-detect new WSL2 kernel releases and trigger module builds.
+
+Add `wsl2-kernel-check.yml` workflow (similar to `ubuntu-kernel-check.yml`):
+- Runs weekly on a schedule
+- Checks `microsoft/WSL2-Linux-Kernel` for new releases
+- If new kernel found and no S3 archive exists, triggers `wsl2-modules.yml`
+- Creates a GitHub issue for tracking
+
+### Phase 9: d3 install WSL2 detection
+
+**Goal:** Detect WSL2 in the Go CLI and guide users.
+
+In `d3 install`:
+1. Detect if running on Windows with WSL2 backend
+2. Check WSL2 kernel version via `wsl -e uname -r`
+3. If kernel < 6.6.36.3: recommend `wsl --update`
+4. If kernel >= 6.6.36.3: proceed normally (launch container handles ZFS loading)
+
+### Phase 10: Cleanup
 
 | Item | Action |
 |------|--------|
-| S3 bucket old precompiled module tarballs | Deprecate old format; new format is per-kernel .ko pairs |
+| S3 bucket old precompiled module tarballs | Deprecate old format; new format includes userland |
 | `datadatdat/zfs-builder` WSL path (`src/wsl.sh`) | Keep on experiment branch only |
 | `datadatdat/docker-desktop-zfs-kernel` images | Deprecate |
 | zfs-builder bzImage CI workflows | Keep on experiment branch only |
 | 30-minute compile-from-source fallback | Removed from launch chain |
-
-### 6. Issue #79
-
-Update with current status. Do NOT close — still needs Phase 4 (d3 install detecting WSL2 + offering kernel upgrade).
-
-## TDD Approach
-
-### BATS tests in `datadatdat-server/server/src/scripts/tests/`
-
-1. **`install_zfs_packages()`** — detect pkg manager, pre-flight checks, error messages
-2. **`insmod_prebuilt_zfs()`** — download logic, insmod calls, fallback behavior
-3. **Removed functions are gone** — verify `compile_and_load_zfs`, `load_precompiled_zfs` don't exist
-4. **New launch chain** — all 4 steps, error propagation
-
-### Local verification
-
-1. BATS tests pass
-2. Build server Docker image locally
-3. `d3 install` on WSL2 with local image — ZFS loads via insmod path
-4. `d3 install` on standard Linux — ZFS loads via package manager path
-5. Pre-flight errors: clear messages for CONFIG_MODULES=n, missing repos
-
-## PRs Required
-
-| PR | Repo | Branch | Description |
-|----|------|--------|-------------|
-| 1 | datadatdat-server | `simplify/zfs-insmod-loading` | zfs.sh simplification + insmod support + BATS tests |
-| 2 | zfs-releases | `feature/wsl2-module-builds` | CI workflow for .ko builds + plan .MD |
-| 3 | datadatdat | `update/install-flow-docs` | DATADATDAT_INSTALL_FLOW.md update |
-
-## Development Order
-
-1. Create branches in all 3 repos
-2. Write failing BATS tests for new functions (datadatdat-server)
-3. Implement `install_zfs_packages()` in zfs.sh
-4. Implement `insmod_prebuilt_zfs()` in zfs.sh
-5. Remove old S3/compile functions from zfs.sh
-6. Update launch script fallback chain
-7. Update existing BATS tests for removed functions
-8. Build and test Docker image locally against WSL2 (kernel 6.6.87.2)
-9. Set up zfs-releases CI for .ko module builds (6.6.87.2 only)
-10. Upload test modules to S3, full E2E test on WSL2
-11. Update DATADATDAT_INSTALL_FLOW.md
-12. Create PRs for all 3 repos
-13. Update issue #79
+| Issue #79 | Close after Phase 7 testing complete |
