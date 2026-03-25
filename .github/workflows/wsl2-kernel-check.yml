@@ -1,0 +1,96 @@
+name: WSL2 Kernel Monitor
+
+on:
+  schedule:
+    - cron: '0 12 * * 1'  # Run weekly on Monday at noon UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check_wsl2_kernels:
+    name: Check for new WSL2 kernel releases
+    runs-on: ubuntu-latest
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: us-west-2
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Fetch WSL2 kernel releases and check for missing builds
+        id: fetch
+        run: |
+          # Get all 6.6.x WSL2 kernel releases (CONFIG_MODULES=y)
+          RELEASES=$(curl -s https://api.github.com/repos/microsoft/WSL2-Linux-Kernel/releases | \
+            jq -r '.[].tag_name' | grep '^linux-msft-wsl-6\.6\.' | \
+            sed 's/linux-msft-wsl-//' | sort -V)
+
+          echo "WSL2 6.6.x kernel releases:"
+          echo "$RELEASES"
+
+          # Get latest stable ZFS version
+          ZFS_VER=$(curl -s https://api.github.com/repos/openzfs/zfs/releases | \
+            jq -r '[.[] | select(.prerelease == false)] | first | .tag_name' | sed 's/^zfs-//')
+          echo "Latest ZFS: $ZFS_VER"
+
+          # Check which ones have S3 archives
+          MISSING=""
+          for ver in $RELEASES; do
+            KREL="${ver}-microsoft-standard-WSL2"
+            ARCHIVE="zfs-${ZFS_VER}-modules-${KREL}.tar.gz"
+            if aws s3api head-object --bucket "${{ secrets.s3_bucket }}" --key "$ARCHIVE" 2>/dev/null; then
+              echo "EXISTS: $ARCHIVE"
+            else
+              echo "MISSING: $ARCHIVE"
+              MISSING="${MISSING}${ver}\n"
+            fi
+          done
+
+          if [ -n "$MISSING" ]; then
+            echo "missing_kernels<<EOF" >> "$GITHUB_OUTPUT"
+            echo -e "$MISSING" | grep -v '^$' >> "$GITHUB_OUTPUT"
+            echo "EOF" >> "$GITHUB_OUTPUT"
+            echo "has_missing=true" >> "$GITHUB_OUTPUT"
+            echo "zfs_version=$ZFS_VER" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_missing=false" >> "$GITHUB_OUTPUT"
+            echo "All WSL2 kernels have ZFS module builds"
+          fi
+
+      - name: Create issue for missing builds
+        if: steps.fetch.outputs.has_missing == 'true'
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const missingKernels = `${{ steps.fetch.outputs.missing_kernels }}`.trim().split('\n');
+            const zfsVersion = `${{ steps.fetch.outputs.zfs_version }}`;
+            const kernelList = missingKernels.map(k => `- \`${k}\``).join('\n');
+
+            const issueBody = `## New WSL2 Kernel Detected — ZFS Modules Missing
+
+            The following WSL2 kernel version(s) do not have ZFS ${zfsVersion} module builds in S3:
+
+            ${kernelList}
+
+            ### Action Required
+
+            Trigger the WSL2 module build workflow for the missing kernel versions:
+
+            \`\`\`bash
+            ${missingKernels.map(k => `gh workflow run "WSL2 ZFS Module Build" --repo datadatdat/zfs-releases`).join('\n')}
+            \`\`\`
+
+            Or add the kernel versions to the build matrix in \`.github/workflows/wsl2-modules.yml\` and re-run.
+
+            ---
+            *This issue was automatically created by the WSL2 Kernel Monitor workflow.*`;
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Missing ZFS module builds for WSL2 kernels: ${missingKernels.join(', ')}`,
+              body: issueBody
+            });
