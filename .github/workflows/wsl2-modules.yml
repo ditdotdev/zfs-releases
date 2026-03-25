@@ -54,7 +54,6 @@ jobs:
           make modules_prepare
           echo "Building kernel modules for Module.symvers..."
           make -j$(nproc) modules
-        timeout-minutes: 60
 
       - name: Clone ZFS source
         run: |
@@ -70,7 +69,6 @@ jobs:
           make -j$(nproc)
           echo "=== Built modules ==="
           find module -name "*.ko" -exec ls -lh {} \;
-        timeout-minutes: 20
 
       - name: Verify modules
         run: |
