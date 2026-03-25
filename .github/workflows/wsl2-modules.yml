@@ -1,0 +1,118 @@
+name: WSL2 ZFS Module Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      wsl_kernel:
+        description: 'WSL2 kernel version (e.g. 6.6.87.2)'
+        required: true
+        default: '6.6.87.2'
+      zfs_version:
+        description: 'ZFS version to build (e.g. 2.2.2)'
+        required: true
+        default: '2.2.2'
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/wsl2-modules.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build-wsl2-modules:
+    name: Build ZFS ${{ github.event.inputs.zfs_version || '2.2.2' }} for WSL2 ${{ github.event.inputs.wsl_kernel || '6.6.87.2' }}
+    runs-on: ubuntu-latest
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: us-west-2
+      WSL_KERNEL: ${{ github.event.inputs.wsl_kernel || '6.6.87.2' }}
+      ZFS_VERSION: ${{ github.event.inputs.zfs_version || '2.2.2' }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq build-essential flex bison libssl-dev \
+            libelf-dev bc dwarves autoconf automake libtool gawk \
+            uuid-dev libudev-dev libblkid-dev libtirpc-dev
+
+      - name: Clone WSL2 kernel source
+        run: |
+          WSL_TAG="linux-msft-wsl-${WSL_KERNEL}"
+          echo "Cloning WSL2 kernel: $WSL_TAG"
+          git clone --depth 1 --branch "$WSL_TAG" \
+            https://github.com/microsoft/WSL2-Linux-Kernel.git /tmp/wsl2-kernel
+
+      - name: Prepare kernel
+        run: |
+          cd /tmp/wsl2-kernel
+          cp Microsoft/config-wsl .config
+          make olddefconfig
+          make modules_prepare
+          echo "Building kernel modules for Module.symvers..."
+          make -j$(nproc) modules
+        timeout-minutes: 30
+
+      - name: Clone ZFS source
+        run: |
+          echo "Cloning ZFS: zfs-${ZFS_VERSION}"
+          git clone --depth 1 --branch "zfs-${ZFS_VERSION}" \
+            https://github.com/openzfs/zfs.git /tmp/zfs
+
+      - name: Build ZFS modules
+        run: |
+          cd /tmp/zfs
+          sh autogen.sh
+          ./configure --with-linux=/tmp/wsl2-kernel --with-linux-obj=/tmp/wsl2-kernel
+          make -j$(nproc)
+          echo "=== Built modules ==="
+          find module -name "*.ko" -exec ls -lh {} \;
+        timeout-minutes: 20
+
+      - name: Verify modules
+        run: |
+          test -f /tmp/zfs/module/spl.ko || { echo "ERROR: spl.ko not found"; exit 1; }
+          test -f /tmp/zfs/module/zfs.ko || { echo "ERROR: zfs.ko not found"; exit 1; }
+          SPL_SIZE=$(stat -c%s /tmp/zfs/module/spl.ko)
+          ZFS_SIZE=$(stat -c%s /tmp/zfs/module/zfs.ko)
+          echo "spl.ko: $((SPL_SIZE / 1048576))MB"
+          echo "zfs.ko: $((ZFS_SIZE / 1048576))MB"
+          # Sanity check: spl.ko should be 1-10MB, zfs.ko should be 50-150MB
+          test "$SPL_SIZE" -gt 1000000 || { echo "ERROR: spl.ko too small"; exit 1; }
+          test "$ZFS_SIZE" -gt 50000000 || { echo "ERROR: zfs.ko too small"; exit 1; }
+
+      - name: Package modules
+        run: |
+          KREL="${WSL_KERNEL}-microsoft-standard-WSL2"
+          ARCHIVE="zfs-modules-${KREL}.tar.gz"
+          mkdir -p /tmp/package
+          cp /tmp/zfs/module/spl.ko /tmp/package/
+          cp /tmp/zfs/module/zfs.ko /tmp/package/
+          cd /tmp/package
+          tar -czf "/tmp/$ARCHIVE" spl.ko zfs.ko
+          echo "Created: $ARCHIVE ($(du -h /tmp/$ARCHIVE | cut -f1))"
+          echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
+          echo "KREL=$KREL" >> "$GITHUB_ENV"
+
+      - name: Upload to S3
+        run: |
+          aws s3 cp "/tmp/$ARCHIVE" "s3://${{ secrets.s3_bucket }}/$ARCHIVE"
+          echo "Uploaded: s3://${{ secrets.s3_bucket }}/$ARCHIVE"
+          echo "Download URL: http://datadatdat-zfs-builds.s3-website-us-west-2.amazonaws.com/$ARCHIVE"
+
+      - name: Verify S3 upload
+        run: |
+          URL="http://datadatdat-zfs-builds.s3-website-us-west-2.amazonaws.com/$ARCHIVE"
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$URL")
+          echo "Verify URL: $URL -> HTTP $HTTP_CODE"
+          test "$HTTP_CODE" = "200" || { echo "ERROR: S3 upload verification failed"; exit 1; }
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: zfs-modules-${{ env.KREL }}
+          path: /tmp/${{ env.ARCHIVE }}
+          retention-days: 30
