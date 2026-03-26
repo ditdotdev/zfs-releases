@@ -242,8 +242,8 @@ Write-Output "=== Unregistering Ubuntu ==="
 wsl --unregister Ubuntu 2>$null
 
 Write-Output "=== Uninstalling WSL via winget ==="
-winget uninstall --id Microsoft.WSL --silent 2>$null
-winget uninstall "Windows Subsystem for Linux" --silent 2>$null
+winget uninstall --id Microsoft.WSL  2>$null
+winget uninstall "Windows Subsystem for Linux"  2>$null
 Start-Sleep -Seconds 5
 
 Write-Output "=== Verifying WSL is fully removed ==="
@@ -352,8 +352,8 @@ Write-Output ""
 Get-Process -Name "Docker*", "com.docker*" -ErrorAction SilentlyContinue | Stop-Process -Force
 wsl --shutdown
 wsl --unregister Ubuntu 2>$null
-winget uninstall --id Microsoft.WSL --silent 2>$null
-winget uninstall "Windows Subsystem for Linux" --silent 2>$null
+winget uninstall --id Microsoft.WSL  2>$null
+winget uninstall "Windows Subsystem for Linux"  2>$null
 Start-Sleep -Seconds 5
 ```
 
