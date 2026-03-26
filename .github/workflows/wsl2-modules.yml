@@ -121,6 +121,11 @@ jobs:
           make -j$(nproc)
           echo "=== Built modules ==="
           find module -name "*.ko" -exec ls -lh {} \;
+          echo "=== Install userland to staging ==="
+          make DESTDIR=/tmp/zfs-install install
+          echo "=== Staged binaries ==="
+          ls -lh /tmp/zfs-install/usr/sbin/z* 2>/dev/null || true
+          ls -lh /tmp/zfs-install/usr/bin/z* 2>/dev/null || true
 
       - name: Verify modules
         if: steps.cache.outputs.cached == 'false'
@@ -144,27 +149,34 @@ jobs:
           cp /tmp/zfs/module/spl.ko /tmp/package/
           cp /tmp/zfs/module/zfs.ko /tmp/package/
 
-          # Userland binaries
-          cp /tmp/zfs/cmd/zpool/.libs/zpool /tmp/package/sbin/
-          cp /tmp/zfs/cmd/zfs/.libs/zfs /tmp/package/sbin/
-          cp /tmp/zfs/cmd/zdb/.libs/zdb /tmp/package/sbin/
+          # Userland binaries from make install staging
+          cp /tmp/zfs-install/usr/sbin/zpool /tmp/package/sbin/ 2>/dev/null || \
+            cp /tmp/zfs-install/usr/bin/zpool /tmp/package/sbin/ 2>/dev/null || true
+          cp /tmp/zfs-install/usr/sbin/zfs /tmp/package/sbin/ 2>/dev/null || \
+            cp /tmp/zfs-install/usr/bin/zfs /tmp/package/sbin/ 2>/dev/null || true
+          cp /tmp/zfs-install/usr/sbin/zdb /tmp/package/sbin/ 2>/dev/null || \
+            cp /tmp/zfs-install/usr/bin/zdb /tmp/package/sbin/ 2>/dev/null || true
 
           # Shared libraries
-          cp /tmp/zfs/lib/libzfs/.libs/libzfs.so* /tmp/package/lib/
-          cp /tmp/zfs/lib/libzfs_core/.libs/libzfs_core.so* /tmp/package/lib/
-          cp /tmp/zfs/lib/libnvpair/.libs/libnvpair.so* /tmp/package/lib/
-          cp /tmp/zfs/lib/libuutil/.libs/libuutil.so* /tmp/package/lib/
-          cp /tmp/zfs/lib/libzpool/.libs/libzpool.so* /tmp/package/lib/
+          find /tmp/zfs-install -name "libzfs.so*" -exec cp {} /tmp/package/lib/ \;
+          find /tmp/zfs-install -name "libzfs_core.so*" -exec cp {} /tmp/package/lib/ \;
+          find /tmp/zfs-install -name "libnvpair.so*" -exec cp {} /tmp/package/lib/ \;
+          find /tmp/zfs-install -name "libuutil.so*" -exec cp {} /tmp/package/lib/ \;
+          find /tmp/zfs-install -name "libzpool.so*" -exec cp {} /tmp/package/lib/ \;
 
           # Version file
           echo "ZFS_VERSION=${ZFS_VERSION}" > /tmp/package/VERSION
           echo "KREL=${{ steps.archive.outputs.krel }}" >> /tmp/package/VERSION
 
+          # Verify we have the essentials
+          echo "=== Package contents ==="
+          ls -lhR /tmp/package/
+          test -f /tmp/package/spl.ko || { echo "ERROR: spl.ko missing"; exit 1; }
+          test -f /tmp/package/zfs.ko || { echo "ERROR: zfs.ko missing"; exit 1; }
+
           cd /tmp/package
           tar -czf "/tmp/$ARCHIVE" .
           echo "Created: $ARCHIVE ($(du -h /tmp/$ARCHIVE | cut -f1))"
-          echo "Contents:"
-          tar -tzf "/tmp/$ARCHIVE"
 
       - name: Upload to S3
         if: steps.cache.outputs.cached == 'false'
