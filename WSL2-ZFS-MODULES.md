@@ -196,6 +196,10 @@ $downloadDir = "$env:USERPROFILE\Downloads\wsl-test"
 ```
 
 **2a. Stop Docker Desktop, unregister Ubuntu, and uninstall WSL:**
+
+> **WARNING:** Do NOT use `wsl --uninstall` — it may prompt to reinstall WSL instead
+> of uninstalling it. Use `winget` to cleanly remove WSL.
+
 ```powershell
 Write-Output "=== Stopping Docker Desktop ==="
 Get-Process -Name "Docker*", "com.docker*" -ErrorAction SilentlyContinue | Stop-Process -Force
@@ -208,8 +212,12 @@ Start-Sleep -Seconds 3
 Write-Output "=== Unregistering Ubuntu ==="
 wsl --unregister Ubuntu 2>$null
 
-Write-Output "=== Uninstalling WSL ==="
-wsl --uninstall
+Write-Output "=== Uninstalling WSL via winget ==="
+winget uninstall --id Microsoft.WSL --silent 2>$null
+# If winget can't find it, try by name
+winget uninstall "Windows Subsystem for Linux" --silent 2>$null
+# Verify: this should show the install prompt (meaning WSL is gone)
+# wsl --version should NOT show a version number
 Start-Sleep -Seconds 5
 ```
 
@@ -298,7 +306,8 @@ Write-Output ""
 Get-Process -Name "Docker*", "com.docker*" -ErrorAction SilentlyContinue | Stop-Process -Force
 wsl --shutdown
 wsl --unregister Ubuntu 2>$null
-wsl --uninstall
+winget uninstall --id Microsoft.WSL --silent 2>$null
+winget uninstall "Windows Subsystem for Linux" --silent 2>$null
 Start-Sleep -Seconds 5
 ```
 
