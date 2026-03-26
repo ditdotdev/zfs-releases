@@ -152,60 +152,166 @@ To force a rebuild, delete the archive from S3: `aws s3 rm s3://$BUCKET/$ARCHIVE
 
 **Goal:** Validate `d3 install` + `make e2e` across multiple WSL2 versions.
 
-**Approach:** Serial testing on the Windows host. Each WSL version requires a different kernel, and only one WSL instance runs at a time.
+**Approach:** Serial testing on the Windows host. Each WSL version requires a different kernel, and only one WSL instance runs at a time. Run each version test from an **elevated PowerShell**.
 
-**WSL version pinning:** WSL releases are available as MSI installers from GitHub:
-```
-https://github.com/microsoft/WSL/releases/download/<VERSION>/wsl.<VERSION>.0.x64.msi
-```
-Example: `wsl.2.5.7.0.x64.msi`
+#### WSL Versions to Test
 
-**Test procedure for each WSL version:**
+| # | WSL Version | Expected Kernel | MSI Download | S3 Archive |
+|---|------------|----------------|--------------|------------|
+| 1 | 2.5.7 | 6.6.75.x | `wsl.2.5.7.0.x64.msi` | `zfs-2.4.1-modules-6.6.75.2-microsoft-standard-WSL2.tar.gz` |
+| 2 | 2.5.9 | 6.6.87.1 | `wsl.2.5.9.0.x64.msi` | `zfs-2.4.1-modules-6.6.87.1-microsoft-standard-WSL2.tar.gz` |
+| 3 | 2.5.10 | 6.6.87.2 | `wsl.2.5.10.0.x64.msi` | `zfs-2.4.1-modules-6.6.87.2-microsoft-standard-WSL2.tar.gz` |
+| 4 | 2.6.1 | 6.6.87.x | `wsl.2.6.1.0.x64.msi` | `zfs-2.4.1-modules-6.6.87.2-microsoft-standard-WSL2.tar.gz` |
+| 5 | 2.6.3 | 6.6.87.2 | (current - `wsl --update`) | `zfs-2.4.1-modules-6.6.87.2-microsoft-standard-WSL2.tar.gz` |
+
+MSI downloads: `https://github.com/microsoft/WSL/releases/download/<VERSION>/wsl.<VERSION>.0.x64.msi`
+
+#### Step 1: Download all MSI installers
 
 ```powershell
-# 1. Stop Docker Desktop
+$downloadDir = "$env:USERPROFILE\Downloads\wsl-test"
+New-Item -ItemType Directory -Path $downloadDir -Force | Out-Null
+
+$versions = @("2.5.7", "2.5.9", "2.5.10", "2.6.1")
+foreach ($v in $versions) {
+    $url = "https://github.com/microsoft/WSL/releases/download/$v/wsl.$v.0.x64.msi"
+    $out = "$downloadDir\wsl.$v.0.x64.msi"
+    if (-not (Test-Path $out)) {
+        Write-Output "Downloading WSL $v..."
+        Invoke-WebRequest -Uri $url -OutFile $out
+    } else {
+        Write-Output "Already have WSL $v"
+    }
+}
+Write-Output "Downloads complete:"
+Get-ChildItem $downloadDir\*.msi | Format-Table Name, Length
+```
+
+#### Step 2: Test each WSL version (repeat for each)
+
+Set the version to test:
+```powershell
+$WSL_VERSION = "2.5.7"  # Change this for each test run
+$downloadDir = "$env:USERPROFILE\Downloads\wsl-test"
+```
+
+**2a. Stop Docker Desktop and WSL:**
+```powershell
+Write-Output "=== Stopping Docker Desktop ==="
 Get-Process -Name "Docker*", "com.docker*" -ErrorAction SilentlyContinue | Stop-Process -Force
+Start-Sleep -Seconds 5
 
-# 2. Shutdown WSL
+Write-Output "=== Shutting down WSL ==="
 wsl --shutdown
+Start-Sleep -Seconds 3
+```
 
-# 3. Install specific WSL version
-# Download from: https://github.com/microsoft/WSL/releases/download/<VERSION>/wsl.<VERSION>.0.x64.msi
-msiexec /i wsl.<VERSION>.0.x64.msi /quiet
+**2b. Install the specific WSL version:**
+```powershell
+Write-Output "=== Installing WSL $WSL_VERSION ==="
+$msi = "$downloadDir\wsl.$WSL_VERSION.0.x64.msi"
+if (-not (Test-Path $msi)) { Write-Error "MSI not found: $msi"; return }
+Start-Process msiexec -ArgumentList "/i `"$msi`" /quiet /norestart" -Wait
+Write-Output "WSL $WSL_VERSION installed"
+```
 
-# 4. Reset Ubuntu distro
-wsl --unregister Ubuntu
+**2c. Reset Ubuntu distro:**
+```powershell
+Write-Output "=== Resetting Ubuntu distro ==="
+wsl --unregister Ubuntu 2>$null
 wsl --install -d Ubuntu --no-launch
+Start-Sleep -Seconds 5
+```
 
-# 5. Verify kernel version
+**2d. Verify WSL version and kernel:**
+```powershell
+Write-Output "=== Verifying WSL ==="
+wsl --version
+Write-Output ""
+Write-Output "=== Kernel version ==="
 wsl -u root -e uname -r
+```
 
-# 6. Start Docker Desktop
+**2e. Start Docker Desktop and verify:**
+```powershell
+Write-Output "=== Starting Docker Desktop ==="
 & "C:\Program Files\Docker\Docker\Docker Desktop.exe"
-# Wait for Docker to be ready
-docker version
 
-# 7. Run d3 install
-./d3.exe install
+Write-Output "Waiting for Docker to be ready (up to 2 minutes)..."
+$timeout = 120
+$elapsed = 0
+while ($elapsed -lt $timeout) {
+    $result = docker version 2>&1
+    if ($LASTEXITCODE -eq 0) {
+        Write-Output "Docker is ready!"
+        break
+    }
+    Start-Sleep -Seconds 5
+    $elapsed += 5
+    Write-Output "  waiting... ($elapsed s)"
+}
+if ($elapsed -ge $timeout) { Write-Error "Docker failed to start"; return }
 
-# 8. Run E2E tests
+Write-Output "=== Docker hello-world test ==="
+docker run --rm hello-world
+```
+
+**2f. Run d3 install:**
+```powershell
+Write-Output "=== Running d3 install ==="
+cd C:\dev\datadatdat\datadatdat
+.\d3.exe install
+
+Write-Output "=== Checking containers ==="
+docker ps --format "table {{.Names}}`t{{.Status}}"
+
+Write-Output "=== Checking ZFS ==="
+docker exec datadatdat-docker-server zpool list
+docker exec datadatdat-docker-server zfs version
+```
+
+**2g. Run E2E tests:**
+```powershell
+Write-Output "=== Running make e2e ==="
 make e2e
 ```
 
-**Test matrix:**
-
-| WSL Version | Kernel | ZFS Archive Expected | Test Status |
-|------------|--------|---------------------|-------------|
-| 2.5.7 | 6.6.75.x | `zfs-<VER>-modules-6.6.75.2-microsoft-standard-WSL2.tar.gz` | Pending |
-| 2.5.9 | 6.6.87.1 | `zfs-<VER>-modules-6.6.87.1-microsoft-standard-WSL2.tar.gz` | Pending |
-| 2.5.10 | 6.6.87.2 | `zfs-<VER>-modules-6.6.87.2-microsoft-standard-WSL2.tar.gz` | Pending |
-| 2.6.1 | 6.6.87.x | Same as above | Pending |
-| 2.6.3 | 6.6.87.2 | `zfs-<VER>-modules-6.6.87.2-microsoft-standard-WSL2.tar.gz` | **PASS** (validated) |
-
-**Important:** After testing, restore the latest WSL version:
+**2h. Record result and clean up:**
 ```powershell
-wsl --update
+# Record the result
+$kernel = (wsl -u root -e uname -r) -replace "`r",""
+Write-Output ""
+Write-Output "=== RESULT ==="
+Write-Output "WSL Version: $WSL_VERSION"
+Write-Output "Kernel:      $kernel"
+Write-Output "Status:      PASS/FAIL (update manually)"
+Write-Output ""
+
+# Clean up for next test
+.\d3.exe uninstall -f
+Get-Process -Name "Docker*", "com.docker*" -ErrorAction SilentlyContinue | Stop-Process -Force
+wsl --shutdown
 ```
+
+#### Step 3: Restore latest WSL version after all tests
+
+```powershell
+Write-Output "=== Restoring latest WSL ==="
+wsl --update
+wsl --unregister Ubuntu
+wsl --install -d Ubuntu --no-launch
+& "C:\Program Files\Docker\Docker\Docker Desktop.exe"
+```
+
+#### Test Results
+
+| # | WSL Version | Kernel | d3 install | make e2e | Notes |
+|---|------------|--------|-----------|----------|-------|
+| 1 | 2.5.7 | | | | |
+| 2 | 2.5.9 | | | | |
+| 3 | 2.5.10 | | | | |
+| 4 | 2.6.1 | | | | |
+| 5 | 2.6.3 | 6.6.87.2 | PASS | PASS | Validated during development |
 
 ### Phase 8: Automated WSL2 kernel detection
 
