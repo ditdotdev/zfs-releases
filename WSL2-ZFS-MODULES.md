@@ -195,7 +195,7 @@ $WSL_VERSION = "2.5.7"  # Change this for each test run
 $downloadDir = "$env:USERPROFILE\Downloads\wsl-test"
 ```
 
-**2a. Stop Docker Desktop and WSL:**
+**2a. Stop Docker Desktop, unregister Ubuntu, and uninstall WSL:**
 ```powershell
 Write-Output "=== Stopping Docker Desktop ==="
 Get-Process -Name "Docker*", "com.docker*" -ErrorAction SilentlyContinue | Stop-Process -Force
@@ -204,6 +204,13 @@ Start-Sleep -Seconds 5
 Write-Output "=== Shutting down WSL ==="
 wsl --shutdown
 Start-Sleep -Seconds 3
+
+Write-Output "=== Unregistering Ubuntu ==="
+wsl --unregister Ubuntu 2>$null
+
+Write-Output "=== Uninstalling WSL ==="
+wsl --uninstall
+Start-Sleep -Seconds 5
 ```
 
 **2b. Install the specific WSL version:**
@@ -215,10 +222,9 @@ Start-Process msiexec -ArgumentList "/i `"$msi`" /quiet /norestart" -Wait
 Write-Output "WSL $WSL_VERSION installed"
 ```
 
-**2c. Reset Ubuntu distro:**
+**2c. Install Ubuntu distro:**
 ```powershell
-Write-Output "=== Resetting Ubuntu distro ==="
-wsl --unregister Ubuntu 2>$null
+Write-Output "=== Installing Ubuntu distro ==="
 wsl --install -d Ubuntu --no-launch
 Start-Sleep -Seconds 5
 ```
@@ -291,6 +297,9 @@ Write-Output ""
 .\d3.exe uninstall -f
 Get-Process -Name "Docker*", "com.docker*" -ErrorAction SilentlyContinue | Stop-Process -Force
 wsl --shutdown
+wsl --unregister Ubuntu 2>$null
+wsl --uninstall
+Start-Sleep -Seconds 5
 ```
 
 #### Step 3: Restore latest WSL version after all tests
@@ -307,7 +316,7 @@ wsl --install -d Ubuntu --no-launch
 
 | # | WSL Version | Kernel | d3 install | make e2e | Notes |
 |---|------------|--------|-----------|----------|-------|
-| 1 | 2.5.7 | | | | |
+| 1 | 2.5.7 | 6.6.87.2 | PASS | PASS | Kernel same as 2.6.3 |
 | 2 | 2.5.9 | | | | |
 | 3 | 2.5.10 | | | | |
 | 4 | 2.6.1 | | | | |
