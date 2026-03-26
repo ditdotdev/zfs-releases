@@ -22,15 +22,18 @@ We proved that on modern WSL2 (kernel >= 6.6.36.3 with `CONFIG_MODULES=y`), ZFS 
 
 Only WSL releases with `CONFIG_MODULES=y` kernels are supported (>= WSL 2.5.1 / kernel 6.6.36.3):
 
-| WSL Version | Release Date | Kernel Version | CONFIG_MODULES | Notes |
-|------------|-------------|----------------|----------------|-------|
-| 2.5.1 | 2025-03-12 | 6.6.75.x | y | First release with modules VHD support |
-| 2.5.7 | 2025-04-24 | 6.6.75.x | y | |
-| 2.5.9 | 2025-06-10 | 6.6.87.1 | y | |
-| 2.5.10 | 2025-08-06 | 6.6.87.2 | y | |
-| 2.6.1 | 2025-08-07 | 6.6.87.x | y | |
-| 2.6.2 | 2025-10-13 | 6.6.87.x | y | |
-| 2.6.3 | 2025-12-12 | 6.6.87.2+ | y | Latest stable |
+| WSL Version | Release Date | Kernel at Release | CONFIG_MODULES | Source |
+|------------|-------------|-------------------|----------------|--------|
+| 2.5.1 | 2025-03-12 | 6.6.75.1 | y | "Update Kernel to 6.6.75" |
+| 2.5.4 | 2025-03-26 | 6.6.75.1 | y | No kernel change |
+| 2.5.7 | 2025-04-24 | 6.6.87.1 | y | "Update Linux kernel to 6.6.87.1-1" |
+| 2.5.9 | 2025-06-10 | 6.6.87.2 | y | "Update to WSL Kernel 6.6.87.2" |
+| 2.5.10 | 2025-08-06 | 6.6.87.2 | y | No kernel change |
+| 2.6.1 | 2025-08-07 | 6.6.87.2 | y | No kernel change |
+| 2.6.2 | 2025-10-13 | 6.6.87.2 | y | No kernel change |
+| 2.6.3 | 2025-12-12 | 6.6.87.2 | y | No kernel change |
+
+**Distinct kernels to support:** 6.6.75.1, 6.6.87.1, 6.6.87.2 (plus future releases)
 
 **Unsupported:** WSL 2.3.x, 2.4.x (ship with 5.15.x kernels, no CONFIG_MODULES=y). Users on these versions should run `wsl --update` to upgrade.
 
@@ -154,33 +157,48 @@ To force a rebuild, delete the archive from S3: `aws s3 rm s3://$BUCKET/$ARCHIVE
 
 **Approach:** Serial testing on the Windows host. Each WSL version requires a different kernel, and only one WSL instance runs at a time. Run each version test from an **elevated PowerShell**.
 
-#### WSL Versions to Test
+#### What to Test
 
-| # | WSL Version | Expected Kernel | MSI Download | S3 Archive |
-|---|------------|----------------|--------------|------------|
-| 1 | 2.5.7 | 6.6.75.x | `wsl.2.5.7.0.x64.msi` | `zfs-2.4.1-modules-6.6.75.2-microsoft-standard-WSL2.tar.gz` |
-| 2 | 2.5.9 | 6.6.87.1 | `wsl.2.5.9.0.x64.msi` | `zfs-2.4.1-modules-6.6.87.1-microsoft-standard-WSL2.tar.gz` |
-| 3 | 2.5.10 | 6.6.87.2 | `wsl.2.5.10.0.x64.msi` | `zfs-2.4.1-modules-6.6.87.2-microsoft-standard-WSL2.tar.gz` |
-| 4 | 2.6.1 | 6.6.87.x | `wsl.2.6.1.0.x64.msi` | `zfs-2.4.1-modules-6.6.87.2-microsoft-standard-WSL2.tar.gz` |
-| 5 | 2.6.3 | 6.6.87.2 | (current - `wsl --update`) | `zfs-2.4.1-modules-6.6.87.2-microsoft-standard-WSL2.tar.gz` |
+**Key insight:** Installing an older WSL MSI does NOT downgrade the kernel. The kernel
+persists independently. Therefore, we test per-kernel, not per-WSL-version.
+
+There are 3 distinct kernels shipped across all supported WSL versions:
+
+| # | Kernel | WSL Versions | S3 Archive | Test Method |
+|---|--------|-------------|------------|-------------|
+| 1 | 6.6.75.1 | 2.5.1, 2.5.4 | `zfs-2.4.1-modules-6.6.75.1-microsoft-standard-WSL2.tar.gz` | Install WSL 2.5.1 MSI on clean machine |
+| 2 | 6.6.87.1 | 2.5.7 | `zfs-2.4.1-modules-6.6.87.1-microsoft-standard-WSL2.tar.gz` | Install WSL 2.5.7 MSI on clean machine |
+| 3 | 6.6.87.2 | 2.5.9+ | `zfs-2.4.1-modules-6.6.87.2-microsoft-standard-WSL2.tar.gz` | Current install (`wsl --update`) |
 
 MSI downloads: `https://github.com/microsoft/WSL/releases/download/<VERSION>/wsl.<VERSION>.0.x64.msi`
 
-#### Step 1: Download all MSI installers
+**Testing requires full WSL uninstall between versions** to ensure the kernel is replaced:
+1. Uninstall WSL completely (winget or remove `C:\Program Files\WSL\`)
+2. Verify `C:\Program Files\WSL\tools\kernel` does NOT exist
+3. Install the target WSL version MSI
+4. Verify kernel version matches expected
+
+#### Step 1: Download MSI installers for each distinct kernel
 
 ```powershell
 $downloadDir = "$env:USERPROFILE\Downloads\wsl-test"
 New-Item -ItemType Directory -Path $downloadDir -Force | Out-Null
 
-$versions = @("2.5.7", "2.5.9", "2.5.10", "2.6.1")
+# One MSI per distinct kernel version
+$versions = @(
+    @{ WSL = "2.5.1"; Kernel = "6.6.75.1" },
+    @{ WSL = "2.5.7"; Kernel = "6.6.87.1" }
+    # 6.6.87.2 is the current version, use wsl --update
+)
 foreach ($v in $versions) {
-    $url = "https://github.com/microsoft/WSL/releases/download/$v/wsl.$v.0.x64.msi"
-    $out = "$downloadDir\wsl.$v.0.x64.msi"
+    $wsl = $v.WSL
+    $url = "https://github.com/microsoft/WSL/releases/download/$wsl/wsl.$wsl.0.x64.msi"
+    $out = "$downloadDir\wsl.$wsl.0.x64.msi"
     if (-not (Test-Path $out)) {
-        Write-Output "Downloading WSL $v..."
+        Write-Output "Downloading WSL $wsl (kernel $($v.Kernel))..."
         Invoke-WebRequest -Uri $url -OutFile $out
     } else {
-        Write-Output "Already have WSL $v"
+        Write-Output "Already have WSL $wsl"
     }
 }
 Write-Output "Downloads complete:"
@@ -191,7 +209,18 @@ Get-ChildItem $downloadDir\*.msi | Format-Table Name, Length
 
 Set the version to test:
 ```powershell
-$WSL_VERSION = "2.5.7"  # Change this for each test run
+# Test 1: kernel 6.6.75.1
+$WSL_VERSION = "2.5.1"
+$EXPECTED_KERNEL = "6.6.75.1"
+
+# Test 2: kernel 6.6.87.1
+# $WSL_VERSION = "2.5.7"
+# $EXPECTED_KERNEL = "6.6.87.1"
+
+# Test 3: kernel 6.6.87.2 (use wsl --update instead of MSI)
+# $WSL_VERSION = "latest"
+# $EXPECTED_KERNEL = "6.6.87.2"
+
 $downloadDir = "$env:USERPROFILE\Downloads\wsl-test"
 ```
 
@@ -214,11 +243,20 @@ wsl --unregister Ubuntu 2>$null
 
 Write-Output "=== Uninstalling WSL via winget ==="
 winget uninstall --id Microsoft.WSL --silent 2>$null
-# If winget can't find it, try by name
 winget uninstall "Windows Subsystem for Linux" --silent 2>$null
-# Verify: this should show the install prompt (meaning WSL is gone)
-# wsl --version should NOT show a version number
 Start-Sleep -Seconds 5
+
+Write-Output "=== Verifying WSL is fully removed ==="
+if (Test-Path "C:\Program Files\WSL\tools\kernel") {
+    Write-Error "KERNEL STILL EXISTS - manually delete C:\Program Files\WSL\"
+    Remove-Item -Recurse -Force "C:\Program Files\WSL\" -ErrorAction SilentlyContinue
+}
+if (-not (Test-Path "C:\Program Files\WSL\tools\kernel")) {
+    Write-Output "Confirmed: WSL kernel removed"
+} else {
+    Write-Error "FAILED to remove WSL kernel. Delete C:\Program Files\WSL\ manually."
+    return
+}
 ```
 
 **2b. Install the specific WSL version:**
@@ -243,7 +281,15 @@ Write-Output "=== Verifying WSL ==="
 wsl --version
 Write-Output ""
 Write-Output "=== Kernel version ==="
-wsl -u root -e uname -r
+$kernel = (wsl -u root -e uname -r) -replace "`r",""
+Write-Output "Kernel: $kernel"
+Write-Output "Expected: $EXPECTED_KERNEL"
+if ($kernel -match $EXPECTED_KERNEL) {
+    Write-Output "MATCH - kernel is correct"
+} else {
+    Write-Error "MISMATCH - expected $EXPECTED_KERNEL, got $kernel"
+    Write-Output "The kernel was not properly replaced. Verify C:\Program Files\WSL\tools\kernel was removed before install."
+}
 ```
 
 **2e. Start Docker Desktop and verify:**
@@ -323,13 +369,11 @@ wsl --install -d Ubuntu --no-launch
 
 #### Test Results
 
-| # | WSL Version | Kernel | d3 install | make e2e | Notes |
-|---|------------|--------|-----------|----------|-------|
-| 1 | 2.5.7 | 6.6.87.2 | PASS | PASS | Kernel same as 2.6.3 |
-| 2 | 2.5.9 | | | | |
-| 3 | 2.5.10 | | | | |
-| 4 | 2.6.1 | | | | |
-| 5 | 2.6.3 | 6.6.87.2 | PASS | PASS | Validated during development |
+| # | WSL MSI | Expected Kernel | Actual Kernel | d3 install | make e2e | Notes |
+|---|---------|----------------|---------------|-----------|----------|-------|
+| 1 | 2.5.1 | 6.6.75.1 | | | | |
+| 2 | 2.5.7 | 6.6.87.1 | | | | |
+| 3 | latest | 6.6.87.2 | 6.6.87.2 | PASS | PASS | Validated during development |
 
 ### Phase 8: Automated WSL2 kernel detection
 
