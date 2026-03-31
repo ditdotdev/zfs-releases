@@ -5,7 +5,7 @@
 
 set -x
 
-zfs_versions="2.2.8"
+zfs_versions=""
 userland_only=false
 kernel_only=false
 kernel_releases=
@@ -56,6 +56,17 @@ done
 shift $((OPTIND-1))
 kernel_releases=$*
 [[ -z $kernel_releases ]] && kernel_releases=$(ls -1 $src_dir)
+
+# Resolve ZFS version dynamically if not specified via -z flag
+if [[ -z $zfs_versions ]]; then
+  zfs_versions=$(curl -s --connect-timeout 5 https://api.github.com/repos/openzfs/zfs/releases/latest 2>/dev/null | \
+    grep '"tag_name"' | head -1 | sed 's/.*"zfs-\([^"]*\)".*/\1/')
+  if [[ -z $zfs_versions ]] || ! echo "$zfs_versions" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+'; then
+    echo "Failed to resolve latest ZFS version from GitHub API" 1>&2
+    exit 1
+  fi
+  echo "Resolved latest stable ZFS version: $zfs_versions"
+fi
 
 mkdir -p $archive_dir || exit 1
 mkdir -p $build_dir || exit 1
