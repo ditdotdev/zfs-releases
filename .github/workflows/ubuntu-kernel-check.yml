@@ -75,36 +75,49 @@ jobs:
           script: |
             const newKernels = `${{ steps.fetch.outputs.new_kernels }}`.trim().split('\n');
             const kernelList = newKernels.map(k => `- \`${k}\``).join('\n');
-            
+            const title = `New Ubuntu 22.04 kernel available: ${newKernels.join(', ')}`;
+
+            // Check for existing open issue with the same title
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              per_page: 100
+            });
+            if (existing.data.some(i => i.title === title)) {
+              console.log(`Open issue already exists: ${title}`);
+              return;
+            }
+
             const issueBody = `## New Ubuntu 22.04 (Jammy) Kernel Detected
-            
+
             The following kernel version(s) are available in Ubuntu 22.04 releases but not yet configured in this repository:
-            
+
             ${kernelList}
-            
+
             **Source:** Ubuntu 22.04 (Jammy) riscv64 cloud images (https://cloud-images.ubuntu.com/releases/jammy/)
-            
+
             ### Action Required
-            
+
             1. Create directories for new kernels:
                \`\`\`bash
                ${newKernels.map(k => `mkdir -p src/${k}`).join('\n')}
                \`\`\`
-            
+
             2. Add \`uname\` file for each kernel (infer from existing pattern)
-            
+
             3. Update \`.github/workflows/push.yml\` matrix to include new kernels:
                - Add to userland build matrix (arm64)
                - Add to kernel build matrix (arm64) for ZFS 2.3.4 and 2.2.8
-            
+
             4. Commit, push, and verify build artifacts in S3
-            
+
             ---
             *This issue was automatically created by the Ubuntu Kernel Monitor workflow.*`;
-            
+
             await github.rest.issues.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              title: `New Ubuntu 22.04 kernel available: ${newKernels.join(', ')}`,
+              title,
               body: issueBody
             });
