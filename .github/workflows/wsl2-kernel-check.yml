@@ -68,6 +68,19 @@ jobs:
             const missingKernels = `${{ steps.fetch.outputs.missing_kernels }}`.trim().split('\n');
             const zfsVersion = `${{ steps.fetch.outputs.zfs_version }}`;
             const kernelList = missingKernels.map(k => `- \`${k}\``).join('\n');
+            const title = `Missing ZFS module builds for WSL2 kernels: ${missingKernels.join(', ')}`;
+
+            // Check for existing open issue with the same title
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              per_page: 100
+            });
+            if (existing.data.some(i => i.title === title)) {
+              console.log(`Open issue already exists: ${title}`);
+              return;
+            }
 
             const issueBody = `## New WSL2 Kernel Detected — ZFS Modules Missing
 
@@ -91,6 +104,6 @@ jobs:
             await github.rest.issues.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              title: `Missing ZFS module builds for WSL2 kernels: ${missingKernels.join(', ')}`,
+              title,
               body: issueBody
             });
