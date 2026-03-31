@@ -8,6 +8,20 @@ permissions:
   contents: read
 
 jobs:
+  resolve-zfs-version:
+    name: Resolve ZFS Version
+    runs-on: ubuntu-latest
+    outputs:
+      zfs_version: ${{ steps.resolve.outputs.zfs_version }}
+    steps:
+      - name: Determine ZFS version
+        id: resolve
+        run: |
+          LATEST=$(curl -s https://api.github.com/repos/openzfs/zfs/releases | \
+            jq -r '[.[] | select(.prerelease == false)] | first | .tag_name' | sed 's/^zfs-//')
+          echo "zfs_version=$LATEST" >> "$GITHUB_OUTPUT"
+          echo "Latest stable ZFS: $LATEST"
+
   build_image:
     name: Build ZFS Builder Image (${{ matrix.arch }})
     if: startsWith(github.ref, 'refs/heads/')
@@ -41,8 +55,8 @@ jobs:
           retention-days: 1
 
   build_userland:
-    name: Build Userland (${{ matrix.arch }}, ${{ matrix.zfs }}, ${{ matrix.kernel }})
-    needs: build_image
+    name: Build Userland (${{ matrix.arch }}, ${{ needs.resolve-zfs-version.outputs.zfs_version }}, ${{ matrix.kernel }})
+    needs: [build_image, resolve-zfs-version]
     runs-on: ubuntu-latest
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -54,83 +68,31 @@ jobs:
           # AMD64 builds
           - arch: amd64
             kernel: 6.6.71-linuxkit
-            zfs: 2.3.4
-          - arch: amd64
-            kernel: 6.6.71-linuxkit
-            zfs: 2.2.8
           - arch: amd64
             kernel: 6.8.0-64-generic
-            zfs: 2.3.4
-          - arch: amd64
-            kernel: 6.8.0-64-generic
-            zfs: 2.2.8
           - arch: amd64
             kernel: 6.8.0-88-generic
-            zfs: 2.3.4
-          - arch: amd64
-            kernel: 6.8.0-88-generic
-            zfs: 2.2.8
           - arch: amd64
             kernel: 6.8.0-90-generic
-            zfs: 2.3.4
-          - arch: amd64
-            kernel: 6.8.0-90-generic
-            zfs: 2.2.8
           - arch: amd64
             kernel: 6.8.0-94-generic
-            zfs: 2.3.4
-          - arch: amd64
-            kernel: 6.8.0-94-generic
-            zfs: 2.2.8
           - arch: amd64
             kernel: 6.8.0-100-generic
-            zfs: 2.3.4
-          - arch: amd64
-            kernel: 6.8.0-100-generic
-            zfs: 2.2.8
           - arch: amd64
             kernel: 6.8.0-101-generic
-            zfs: 2.3.4
-          - arch: amd64
-            kernel: 6.8.0-101-generic
-            zfs: 2.2.8
           # ARM64 builds
           - arch: arm64
             kernel: 6.8.0-64-generic
-            zfs: 2.3.4
-          - arch: arm64
-            kernel: 6.8.0-64-generic
-            zfs: 2.2.8
           - arch: arm64
             kernel: 6.8.0-88-generic
-            zfs: 2.3.4
-          - arch: arm64
-            kernel: 6.8.0-88-generic
-            zfs: 2.2.8
           - arch: arm64
             kernel: 6.8.0-90-generic
-            zfs: 2.3.4
-          - arch: arm64
-            kernel: 6.8.0-90-generic
-            zfs: 2.2.8
           - arch: arm64
             kernel: 6.8.0-94-generic
-            zfs: 2.3.4
-          - arch: arm64
-            kernel: 6.8.0-94-generic
-            zfs: 2.2.8
           - arch: arm64
             kernel: 6.8.0-100-generic
-            zfs: 2.3.4
-          - arch: arm64
-            kernel: 6.8.0-100-generic
-            zfs: 2.2.8
           - arch: arm64
             kernel: 6.8.0-101-generic
-            zfs: 2.3.4
-          - arch: arm64
-            kernel: 6.8.0-101-generic
-            zfs: 2.2.8
     steps:
       - uses: actions/checkout@v6
       - name: Set up QEMU for cross-platform builds
@@ -142,13 +104,13 @@ jobs:
       - name: Load Docker image
         run: gunzip -c zfs-builder.tar.gz | docker load
       - name: Build
-        run: ./build -u -b ${{ secrets.s3_bucket }} -a ${{ matrix.arch }} -z ${{ matrix.zfs }} ${{ matrix.kernel }}
+        run: ./build -u -b ${{ secrets.s3_bucket }} -a ${{ matrix.arch }} -z ${{ needs.resolve-zfs-version.outputs.zfs_version }} ${{ matrix.kernel }}
       - name: Publish
         run: ./publish ${{ secrets.s3_bucket }}
 
   build_kernel:
-    name: Build Kernel (${{ matrix.arch }}, ${{ matrix.zfs }}, ${{ matrix.kernel }})
-    needs: build_image
+    name: Build Kernel (${{ matrix.arch }}, ${{ needs.resolve-zfs-version.outputs.zfs_version }}, ${{ matrix.kernel }})
+    needs: [build_image, resolve-zfs-version]
     runs-on: ubuntu-latest
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -159,111 +121,41 @@ jobs:
         include:
           # AMD64 builds
           - arch: amd64
-            zfs: 2.3.4
             kernel: 6.6.71-linuxkit
           - arch: amd64
-            zfs: 2.3.4
             kernel: 6.6.13-linuxkit
           - arch: amd64
-            zfs: 2.3.4
             kernel: 5.15.27-linuxkit
           - arch: amd64
-            zfs: 2.3.4
             kernel: 5.10.104-linuxkit
           # Disabled: 5.15.0-25-generic has incompatible symbol exports (__x86_return_thunk, fault_in_iov_iter_readable, timer_delete_sync)
           # See: https://github.com/datadatdat/zfs-releases/actions/runs/21638695810
           # - arch: amd64
-          #   zfs: 2.3.4
           #   kernel: 5.15.0-25-generic
           - arch: amd64
-            zfs: 2.3.4
             kernel: 6.8.0-64-generic
           - arch: amd64
-            zfs: 2.3.4
             kernel: 6.8.0-88-generic
           - arch: amd64
-            zfs: 2.3.4
             kernel: 6.8.0-90-generic
           - arch: amd64
-            zfs: 2.3.4
             kernel: 6.8.0-94-generic
           - arch: amd64
-            zfs: 2.3.4
             kernel: 6.8.0-100-generic
           - arch: amd64
-            zfs: 2.3.4
-            kernel: 6.8.0-101-generic
-          - arch: amd64
-            zfs: 2.2.8
-            kernel: 6.6.71-linuxkit
-          - arch: amd64
-            zfs: 2.2.8
-            kernel: 6.6.13-linuxkit
-          - arch: amd64
-            zfs: 2.2.8
-            kernel: 5.15.27-linuxkit
-          - arch: amd64
-            zfs: 2.2.8
-            kernel: 5.10.104-linuxkit
-          # Disabled: 5.15.0-25-generic has incompatible symbol exports (__x86_return_thunk, fault_in_iov_iter_readable, timer_delete_sync)
-          # See: https://github.com/datadatdat/zfs-releases/actions/runs/21638695810
-          # - arch: amd64
-          #   zfs: 2.2.8
-          #   kernel: 5.15.0-25-generic
-          - arch: amd64
-            zfs: 2.2.8
-            kernel: 6.8.0-64-generic
-          - arch: amd64
-            zfs: 2.2.8
-            kernel: 6.8.0-88-generic
-          - arch: amd64
-            zfs: 2.2.8
-            kernel: 6.8.0-90-generic
-          - arch: amd64
-            zfs: 2.2.8
-            kernel: 6.8.0-94-generic
-          - arch: amd64
-            zfs: 2.2.8
-            kernel: 6.8.0-100-generic
-          - arch: amd64
-            zfs: 2.2.8
             kernel: 6.8.0-101-generic
           # ARM64 builds
           - arch: arm64
-            zfs: 2.3.4
             kernel: 6.8.0-64-generic
           - arch: arm64
-            zfs: 2.2.8
-            kernel: 6.8.0-64-generic
-          - arch: arm64
-            zfs: 2.3.4
             kernel: 6.8.0-88-generic
           - arch: arm64
-            zfs: 2.2.8
-            kernel: 6.8.0-88-generic
-          - arch: arm64
-            zfs: 2.3.4
             kernel: 6.8.0-90-generic
           - arch: arm64
-            zfs: 2.2.8
-            kernel: 6.8.0-90-generic
-          - arch: arm64
-            zfs: 2.3.4
             kernel: 6.8.0-94-generic
           - arch: arm64
-            zfs: 2.2.8
-            kernel: 6.8.0-94-generic
-          - arch: arm64
-            zfs: 2.3.4
             kernel: 6.8.0-100-generic
           - arch: arm64
-            zfs: 2.2.8
-            kernel: 6.8.0-100-generic
-          - arch: arm64
-            zfs: 2.3.4
-            kernel: 6.8.0-101-generic
-          - arch: arm64
-            zfs: 2.2.8
             kernel: 6.8.0-101-generic
     steps:
       - uses: actions/checkout@v6
@@ -276,6 +168,6 @@ jobs:
       - name: Load Docker image
         run: gunzip -c zfs-builder.tar.gz | docker load
       - name: Build
-        run: ./build -k -b ${{ secrets.s3_bucket }} -a ${{ matrix.arch }} -z ${{ matrix.zfs }} ${{ matrix.kernel }}
+        run: ./build -k -b ${{ secrets.s3_bucket }} -a ${{ matrix.arch }} -z ${{ needs.resolve-zfs-version.outputs.zfs_version }} ${{ matrix.kernel }}
       - name: Publish
         run: ./publish ${{ secrets.s3_bucket }}
