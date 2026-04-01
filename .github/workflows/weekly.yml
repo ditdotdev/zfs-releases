@@ -65,17 +65,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        arch: [arm64]
+        kernel:
+          - 6.8.0-64-generic
+          - 6.8.0-88-generic
+          - 6.8.0-90-generic
+          - 6.8.0-94-generic
         include:
+          # LinuxKit kernel is amd64 only
           - arch: amd64
             kernel: 6.6.71-linuxkit
-          - arch: arm64
-            kernel: 6.8.0-64-generic
-          - arch: arm64
-            kernel: 6.8.0-88-generic
-          - arch: arm64
-            kernel: 6.8.0-90-generic
-          - arch: arm64
-            kernel: 6.8.0-94-generic
     steps:
       - uses: actions/checkout@v6
       - name: Set up QEMU for cross-platform builds
@@ -101,8 +100,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        arch: [arm64]
+        kernel:
+          - 6.8.0-64-generic
+          - 6.8.0-88-generic
+          - 6.8.0-90-generic
+          - 6.8.0-94-generic
         include:
-          # AMD64 builds
+          # LinuxKit kernels are amd64 only
           - arch: amd64
             kernel: 6.6.71-linuxkit
           - arch: amd64
@@ -113,15 +118,6 @@ jobs:
             kernel: 5.10.104-linuxkit
           - arch: amd64
             kernel: 6.8.0-64-generic
-          # ARM64 builds
-          - arch: arm64
-            kernel: 6.8.0-64-generic
-          - arch: arm64
-            kernel: 6.8.0-88-generic
-          - arch: arm64
-            kernel: 6.8.0-90-generic
-          - arch: arm64
-            kernel: 6.8.0-94-generic
     steps:
       - uses: actions/checkout@v6
       - name: Set up QEMU for cross-platform builds
