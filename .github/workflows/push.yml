@@ -64,39 +64,19 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        arch: [amd64, arm64]
+        kernel:
+          - 6.8.0-64-generic
+          - 6.8.0-88-generic
+          - 6.8.0-90-generic
+          - 6.8.0-94-generic
+          - 6.8.0-100-generic
+          - 6.8.0-101-generic
+          - 6.8.0-106-generic
         include:
-          # AMD64 builds
+          # LinuxKit kernel is amd64 only
           - arch: amd64
             kernel: 6.6.71-linuxkit
-          - arch: amd64
-            kernel: 6.8.0-64-generic
-          - arch: amd64
-            kernel: 6.8.0-88-generic
-          - arch: amd64
-            kernel: 6.8.0-90-generic
-          - arch: amd64
-            kernel: 6.8.0-94-generic
-          - arch: amd64
-            kernel: 6.8.0-100-generic
-          - arch: amd64
-            kernel: 6.8.0-101-generic
-          - arch: amd64
-            kernel: 6.8.0-106-generic
-          # ARM64 builds
-          - arch: arm64
-            kernel: 6.8.0-64-generic
-          - arch: arm64
-            kernel: 6.8.0-88-generic
-          - arch: arm64
-            kernel: 6.8.0-90-generic
-          - arch: arm64
-            kernel: 6.8.0-94-generic
-          - arch: arm64
-            kernel: 6.8.0-100-generic
-          - arch: arm64
-            kernel: 6.8.0-101-generic
-          - arch: arm64
-            kernel: 6.8.0-106-generic
     steps:
       - uses: actions/checkout@v6
       - name: Set up QEMU for cross-platform builds
@@ -122,8 +102,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        arch: [amd64, arm64]
+        kernel:
+          - 6.8.0-64-generic
+          - 6.8.0-88-generic
+          - 6.8.0-90-generic
+          - 6.8.0-94-generic
+          - 6.8.0-100-generic
+          - 6.8.0-101-generic
+          - 6.8.0-106-generic
         include:
-          # AMD64 builds
+          # LinuxKit kernels are amd64 only
           - arch: amd64
             kernel: 6.6.71-linuxkit
           - arch: amd64
@@ -136,35 +125,6 @@ jobs:
           # See: https://github.com/datadatdat/zfs-releases/actions/runs/21638695810
           # - arch: amd64
           #   kernel: 5.15.0-25-generic
-          - arch: amd64
-            kernel: 6.8.0-64-generic
-          - arch: amd64
-            kernel: 6.8.0-88-generic
-          - arch: amd64
-            kernel: 6.8.0-90-generic
-          - arch: amd64
-            kernel: 6.8.0-94-generic
-          - arch: amd64
-            kernel: 6.8.0-100-generic
-          - arch: amd64
-            kernel: 6.8.0-101-generic
-          - arch: amd64
-            kernel: 6.8.0-106-generic
-          # ARM64 builds
-          - arch: arm64
-            kernel: 6.8.0-64-generic
-          - arch: arm64
-            kernel: 6.8.0-88-generic
-          - arch: arm64
-            kernel: 6.8.0-90-generic
-          - arch: arm64
-            kernel: 6.8.0-94-generic
-          - arch: arm64
-            kernel: 6.8.0-100-generic
-          - arch: arm64
-            kernel: 6.8.0-101-generic
-          - arch: arm64
-            kernel: 6.8.0-106-generic
     steps:
       - uses: actions/checkout@v6
       - name: Set up QEMU for cross-platform builds
