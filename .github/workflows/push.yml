@@ -80,6 +80,8 @@ jobs:
             kernel: 6.8.0-100-generic
           - arch: amd64
             kernel: 6.8.0-101-generic
+          - arch: amd64
+            kernel: 6.8.0-106-generic
           # ARM64 builds
           - arch: arm64
             kernel: 6.8.0-64-generic
@@ -93,6 +95,8 @@ jobs:
             kernel: 6.8.0-100-generic
           - arch: arm64
             kernel: 6.8.0-101-generic
+          - arch: arm64
+            kernel: 6.8.0-106-generic
     steps:
       - uses: actions/checkout@v6
       - name: Set up QEMU for cross-platform builds
@@ -144,6 +148,8 @@ jobs:
             kernel: 6.8.0-100-generic
           - arch: amd64
             kernel: 6.8.0-101-generic
+          - arch: amd64
+            kernel: 6.8.0-106-generic
           # ARM64 builds
           - arch: arm64
             kernel: 6.8.0-64-generic
@@ -157,6 +163,8 @@ jobs:
             kernel: 6.8.0-100-generic
           - arch: arm64
             kernel: 6.8.0-101-generic
+          - arch: arm64
+            kernel: 6.8.0-106-generic
     steps:
       - uses: actions/checkout@v6
       - name: Set up QEMU for cross-platform builds
