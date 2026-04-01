@@ -43,12 +43,15 @@ jobs:
       fail-fast: false
       matrix:
         wsl_kernel:
+          - '6.6.36.3'    # Older WSL kernel
+          - '6.6.36.6'    # Older WSL kernel
           - '6.6.75.1'    # WSL 2.5.1, 2.5.4
           - '6.6.75.2'    # WSL 2.5.1+ (if kernel updated)
           - '6.6.75.3'    # WSL 2.5.1+ (if kernel updated)
+          - '6.6.84.1'    # WSL kernel
           - '6.6.87.1'    # WSL 2.5.7
           - '6.6.87.2'    # WSL 2.5.9+
-          - '6.6.114.1'   # Future
+          - '6.6.114.1'   # WSL kernel
           - '6.6.123.2'   # Latest kernel release
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
