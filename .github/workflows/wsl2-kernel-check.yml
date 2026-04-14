@@ -62,7 +62,7 @@ jobs:
 
       - name: Create issue for missing builds
         if: steps.fetch.outputs.has_missing == 'true'
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             const missingKernels = `${{ steps.fetch.outputs.missing_kernels }}`.trim().split('\n');
