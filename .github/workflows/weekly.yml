@@ -30,8 +30,6 @@ jobs:
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      # Affects docker pull / run target architecture for the multi-arch zfs-builder image.
-      DOCKER_DEFAULT_PLATFORM: linux/${{ matrix.arch }}
     strategy:
       fail-fast: false
       matrix:
@@ -50,8 +48,10 @@ jobs:
       - name: Set up QEMU for cross-platform builds
         uses: docker/setup-qemu-action@v4
       - name: Pull zfs-builder image
-        run: docker pull datadatdat/zfs-builder:latest
+        run: docker pull --platform linux/${{ matrix.arch }} datadatdat/zfs-builder:latest
       - name: Build
+        env:
+          DOCKER_DEFAULT_PLATFORM: linux/${{ matrix.arch }}
         run: ./build -u -b ${{ secrets.s3_bucket }} -a ${{ matrix.arch }} -z ${{ needs.resolve-zfs-version.outputs.zfs_version }} ${{ matrix.kernel }}
       - name: Publish
         run: ./publish ${{ secrets.s3_bucket }}
@@ -63,7 +63,6 @@ jobs:
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      DOCKER_DEFAULT_PLATFORM: linux/${{ matrix.arch }}
     strategy:
       fail-fast: false
       matrix:
@@ -90,8 +89,10 @@ jobs:
       - name: Set up QEMU for cross-platform builds
         uses: docker/setup-qemu-action@v4
       - name: Pull zfs-builder image
-        run: docker pull datadatdat/zfs-builder:latest
+        run: docker pull --platform linux/${{ matrix.arch }} datadatdat/zfs-builder:latest
       - name: Build
+        env:
+          DOCKER_DEFAULT_PLATFORM: linux/${{ matrix.arch }}
         run: ./build -k -b ${{ secrets.s3_bucket }} -a ${{ matrix.arch }} -z ${{ needs.resolve-zfs-version.outputs.zfs_version }} ${{ matrix.kernel }}
       - name: Publish
         run: ./publish ${{ secrets.s3_bucket }}
@@ -123,7 +124,6 @@ jobs:
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      DOCKER_DEFAULT_PLATFORM: linux/amd64
     strategy:
       fail-fast: false
       matrix:
@@ -131,8 +131,10 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Pull zfs-builder image
-        run: docker pull datadatdat/zfs-builder:latest
+        run: docker pull --platform linux/amd64 datadatdat/zfs-builder:latest
       - name: Build
+        env:
+          DOCKER_DEFAULT_PLATFORM: linux/amd64
         run: ./build -k -b ${{ secrets.s3_bucket }} -a amd64 -z ${{ needs.resolve-zfs-version.outputs.zfs_version }} ${{ matrix.kernels }}
       - name: Publish
         run: ./publish ${{ secrets.s3_bucket }}
