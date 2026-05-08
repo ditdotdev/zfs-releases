@@ -1,4 +1,4 @@
-name: Ubuntu 22.04 Kernel Monitor
+name: Ubuntu Kernel Monitor
 
 on:
   schedule:
@@ -11,113 +11,252 @@ permissions:
 
 jobs:
   check_ubuntu_kernels:
-    name: Check for new Ubuntu 22.04 (Jammy) kernels
+    name: Check for new Ubuntu kernels
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      
-      - name: Fetch Ubuntu 22.04 release page and check for new kernels
+
+      - name: Discover families from src/ and check Ubuntu archives
         id: fetch
+        shell: bash
         run: |
-          # Get recent jammy releases (past 3 months)
-          CUTOFF_DATE=$(date -d '3 months ago' +%Y%m%d)
-          RELEASES=$(curl -s https://cloud-images.ubuntu.com/releases/jammy/ | \
-            grep -oP 'release-\d{8}' | sort -u | \
-            awk -v cutoff="$CUTOFF_DATE" '$0 >= "release-" cutoff')
-          
-          echo "Checking recent releases:"
-          echo "$RELEASES"
-          
-          # Extract kernel versions from riscv64 manifests
-          KERNELS=""
-          for release in $RELEASES; do
-            kernel=$(curl -s "https://cloud-images.ubuntu.com/releases/jammy/$release/ubuntu-22.04-server-cloudimg-riscv64.manifest" 2>/dev/null | \
-              grep "^linux-image-6\.8\.0-[0-9]*-generic" | head -1 | \
-              awk '{print $1}' | sed 's/linux-image-//' || true)
-            if [ -n "$kernel" ]; then
-              KERNELS="${KERNELS}${kernel}\n"
+          set -euo pipefail
+
+          # Map kernel release strings to Ubuntu codename. Mirrors
+          # ubuntu_codename_for_kernel() in zfs-builder/src/ubuntu.sh — keep
+          # these in sync. Empty result = EOL series we no longer monitor.
+          codename_for() {
+            case $1 in
+              5.4.0-*-generic)   echo focal ;;
+              5.15.0-*-generic)  echo jammy ;;
+              6.8.0-*-generic)   echo noble ;;
+              7.0.0-*-generic)   echo resolute ;;
+              5.4.0-*-azure|5.4.0-*-aws|5.4.0-*-gcp)        echo focal ;;
+              5.15.0-*-azure|5.15.0-*-aws|5.15.0-*-gcp)     echo jammy ;;
+              *-azure|*-aws|*-gcp)                          echo noble ;;
+            esac
+          }
+
+          # Bucket existing src/ kernels into "families" — X.Y.Z-flavor with
+          # the build number stripped — and resolve each family's codename.
+          declare -A FAMILY_CODENAME
+          for d in src/*/; do
+            kernel=$(basename "$d")
+            if [[ ! $kernel =~ ^[0-9]+\.[0-9]+\.[0-9]+-[0-9]+-(generic|azure|aws|gcp)$ ]]; then
+              echo "Skipping non-standard kernel name: $kernel"
+              continue
             fi
-          done
-          
-          # Deduplicate and sort
-          KERNELS=$(echo -e "$KERNELS" | sort -u)
-          
-          echo "Found kernels in jammy releases:"
-          echo "$KERNELS"
-          
-          # Get existing kernels from src/ directory
-          EXISTING=$(ls -1 src/ | grep '^6\.8\.0-.*-generic$' || true)
-          
-          echo "Existing kernels in src/:"
-          echo "$EXISTING"
-          
-          # Find new kernels
-          NEW_KERNELS=""
-          for kernel in $KERNELS; do
-            if ! echo "$EXISTING" | grep -q "^${kernel}$"; then
-              NEW_KERNELS="${NEW_KERNELS}${kernel}\n"
+            codename=$(codename_for "$kernel")
+            if [[ -z $codename ]]; then
+              echo "Skipping $kernel — no codename mapping (likely EOL series)"
+              continue
             fi
+            family=$(echo "$kernel" | sed -E 's/^([0-9]+\.[0-9]+\.[0-9]+)-[0-9]+-(.+)$/\1-\2/')
+            FAMILY_CODENAME["$family"]=$codename
           done
-          
-          if [ -n "$NEW_KERNELS" ]; then
-            echo "new_kernels<<EOF" >> $GITHUB_OUTPUT
-            echo -e "$NEW_KERNELS" | grep -v '^$' >> $GITHUB_OUTPUT
-            echo "EOF" >> $GITHUB_OUTPUT
-            echo "has_new=true" >> $GITHUB_OUTPUT
-          else
-            echo "has_new=false" >> $GITHUB_OUTPUT
+
+          if [[ ${#FAMILY_CODENAME[@]} -eq 0 ]]; then
+            echo "No recognizable kernel families in src/ — nothing to check"
+            echo "has_new=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
-      
-      - name: Create issue for new kernels
+
+          echo "Tracking families:"
+          for family in "${!FAMILY_CODENAME[@]}"; do
+            echo "  $family -> ${FAMILY_CODENAME[$family]}"
+          done
+
+          # For each family, query both -updates and -security pockets across
+          # amd64 and arm64. Collect all kernel package names matching the
+          # family pattern, then diff against src/.
+          declare -A NEW_BY_CODENAME
+          for family in "${!FAMILY_CODENAME[@]}"; do
+            codename=${FAMILY_CODENAME[$family]}
+            version=${family%-*}      # e.g. "6.8.0"
+            flavor=${family##*-}      # e.g. "generic"
+            version_re=${version//./\\.}
+            package_re="^Package: linux-image-${version_re}-[0-9]+-${flavor}$"
+
+            echo "::group::Checking $family in $codename"
+            FOUND=""
+            for pocket in "${codename}-updates" "${codename}-security"; do
+              for arch in amd64 arm64; do
+                case $arch in
+                  amd64|i386)
+                    if [[ $pocket == *-security ]]; then
+                      host="http://security.ubuntu.com/ubuntu"
+                    else
+                      host="http://archive.ubuntu.com/ubuntu"
+                    fi
+                    ;;
+                  *)
+                    host="http://ports.ubuntu.com/ubuntu-ports"
+                    ;;
+                esac
+                url="${host}/dists/${pocket}/main/binary-${arch}/Packages.gz"
+                tmpfile=$(mktemp)
+                if ! curl -sLf "$url" > "$tmpfile"; then
+                  echo "  WARN: failed to fetch $url (skipping)"
+                  rm -f "$tmpfile"
+                  continue
+                fi
+                kernels=$(gunzip -c "$tmpfile" | grep -E "$package_re" | sed 's/^Package: linux-image-//' || true)
+                rm -f "$tmpfile"
+                if [[ -n $kernels ]]; then
+                  FOUND+=$'\n'"$kernels"
+                fi
+              done
+            done
+
+            FOUND_SORTED=$(printf '%s' "$FOUND" | sort -uV | grep -v '^$' || true)
+            if [[ -n $FOUND_SORTED ]]; then
+              echo "Published in $codename:"
+              echo "$FOUND_SORTED" | sed 's/^/  /'
+            fi
+
+            # Find highest build number for this family already in src/.
+            # We only flag archive entries with HIGHER build numbers — older
+            # versions are intentionally skipped (we don't backfill superseded
+            # kernels, only chase forward).
+            highest_in_src=0
+            for d in src/*/; do
+              k=$(basename "$d")
+              [[ $k =~ ^[0-9]+\.[0-9]+\.[0-9]+-[0-9]+-(generic|azure|aws|gcp)$ ]] || continue
+              k_family=$(echo "$k" | sed -E 's/^([0-9]+\.[0-9]+\.[0-9]+)-[0-9]+-(.+)$/\1-\2/')
+              [[ $k_family == "$family" ]] || continue
+              k_build=$(echo "$k" | sed -E 's/^[0-9]+\.[0-9]+\.[0-9]+-([0-9]+)-.+$/\1/')
+              (( k_build > highest_in_src )) && highest_in_src=$k_build
+            done
+            echo "Highest build in src/ for $family: $highest_in_src"
+
+            for kernel in $FOUND_SORTED; do
+              k_build=$(echo "$kernel" | sed -E 's/^[0-9]+\.[0-9]+\.[0-9]+-([0-9]+)-.+$/\1/')
+              if (( k_build > highest_in_src )); then
+                echo "  NEW: $kernel"
+                NEW_BY_CODENAME[$codename]+="$kernel "
+              fi
+            done
+            echo "::endgroup::"
+          done
+
+          TOTAL_NEW=0
+          for codename in "${!NEW_BY_CODENAME[@]}"; do
+            count=$(echo ${NEW_BY_CODENAME[$codename]} | wc -w)
+            TOTAL_NEW=$((TOTAL_NEW + count))
+          done
+
+          {
+            echo "results<<EOF"
+            for codename in "${!NEW_BY_CODENAME[@]}"; do
+              kernels=$(echo ${NEW_BY_CODENAME[$codename]} | tr -s ' ')
+              [[ -n $kernels ]] && echo "$codename: $kernels"
+            done
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+          if [[ $TOTAL_NEW -gt 0 ]]; then
+            echo "has_new=true" >> "$GITHUB_OUTPUT"
+            echo "Found $TOTAL_NEW new kernel(s) across ${#NEW_BY_CODENAME[@]} series"
+          else
+            echo "has_new=false" >> "$GITHUB_OUTPUT"
+            echo "No new kernels found"
+          fi
+
+      - name: Create issues for new kernels
         if: steps.fetch.outputs.has_new == 'true'
         uses: actions/github-script@v9
         with:
           script: |
-            const newKernels = `${{ steps.fetch.outputs.new_kernels }}`.trim().split('\n');
-            const kernelList = newKernels.map(k => `- \`${k}\``).join('\n');
-            const title = `New Ubuntu 22.04 kernel available: ${newKernels.join(', ')}`;
+            const SERIES_NAMES = {
+              focal:    'Ubuntu 20.04 (focal)',
+              jammy:    'Ubuntu 22.04 (jammy)',
+              noble:    'Ubuntu 24.04 (noble)',
+              resolute: 'Ubuntu 26.04 (resolute)',
+            };
 
-            // Check for existing open issue with the same title
-            const existing = await github.rest.issues.listForRepo({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              state: 'open',
-              per_page: 100
-            });
-            if (existing.data.some(i => i.title === title)) {
-              console.log(`Open issue already exists: ${title}`);
+            const raw = `${{ steps.fetch.outputs.results }}`.trim();
+            if (!raw) {
+              console.log('No results to process');
               return;
             }
 
-            const issueBody = `## New Ubuntu 22.04 (Jammy) Kernel Detected
-
-            The following kernel version(s) are available in Ubuntu 22.04 releases but not yet configured in this repository:
-
-            ${kernelList}
-
-            **Source:** Ubuntu 22.04 (Jammy) riscv64 cloud images (https://cloud-images.ubuntu.com/releases/jammy/)
-
-            ### Action Required
-
-            1. Create directories for new kernels:
-               \`\`\`bash
-               ${newKernels.map(k => `mkdir -p src/${k}`).join('\n')}
-               \`\`\`
-
-            2. Add \`uname\` file for each kernel (infer from existing pattern)
-
-            3. Update \`.github/workflows/push.yml\` matrix to include new kernels:
-               - Add to userland build matrix (arm64)
-               - Add to kernel build matrix (arm64) for ZFS 2.3.4 and 2.2.8
-
-            4. Commit, push, and verify build artifacts in S3
-
-            ---
-            *This issue was automatically created by the Ubuntu Kernel Monitor workflow.*`;
-
-            await github.rest.issues.create({
+            const existing = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
-              repo: context.repo.repo,
-              title,
-              body: issueBody
+              repo:  context.repo.repo,
+              state: 'open',
+              per_page: 100,
             });
+
+            for (const line of raw.split('\n').filter(l => l.trim())) {
+              const [codename, kernelsStr] = line.split(': ');
+              const kernels = (kernelsStr || '').trim().split(/\s+/).filter(k => k);
+              if (kernels.length === 0) continue;
+
+              const seriesName = SERIES_NAMES[codename] || `Ubuntu (${codename})`;
+
+              // Keep titles short and stable. For small sets list everything;
+              // for large sets (dormant families) summarize with first/last
+              // and count so the title fits and stays unique-per-set.
+              const titleSuffix = kernels.length <= 5
+                ? kernels.join(', ')
+                : `${kernels[0]} ... ${kernels[kernels.length - 1]} (${kernels.length} versions)`;
+              const title = `New ${seriesName} kernels available: ${titleSuffix}`;
+
+              if (existing.data.some(i => i.title === title)) {
+                console.log(`Open issue already exists: ${title}`);
+                continue;
+              }
+
+              // Body: list up to 25 kernels inline; collapse the rest if more.
+              const INLINE_LIMIT = 25;
+              const inline = kernels.slice(0, INLINE_LIMIT).map(k => `- \`${k}\``).join('\n');
+              const overflow = kernels.length > INLINE_LIMIT
+                ? [
+                    ``,
+                    `<details><summary>… and ${kernels.length - INLINE_LIMIT} more</summary>`,
+                    ``,
+                    kernels.slice(INLINE_LIMIT).map(k => `- \`${k}\``).join('\n'),
+                    ``,
+                    `</details>`,
+                  ].join('\n')
+                : '';
+
+              const mkdirs = kernels.map(k => `mkdir -p src/${k}`).join('\n');
+
+              const issueBody = [
+                `## New ${seriesName} Kernels Detected`,
+                ``,
+                `${kernels.length} kernel version(s) are published in the \`${codename}\` package archive (\`${codename}-updates\` + \`${codename}-security\`, amd64 + arm64) with build numbers higher than what is currently in \`src/\` for their family:`,
+                ``,
+                inline,
+                overflow,
+                ``,
+                `### Action Required`,
+                ``,
+                `If we want to support these kernels:`,
+                ``,
+                `1. Create directories for the new kernels:`,
+                `   \`\`\`bash`,
+                `   ${mkdirs.split('\n').join('\n   ')}`,
+                `   \`\`\``,
+                ``,
+                `2. Add a \`uname\` file for each kernel (infer from existing pattern in adjacent directories).`,
+                ``,
+                `3. Update \`.github/workflows/push.yml\` matrix to include the new kernels (userland and kernel matrices, both arches).`,
+                ``,
+                `4. Commit, push, and verify build artifacts in S3.`,
+                ``,
+                `If a family is far behind (large \`(N versions)\` count), the cloud-variant kernels in \`src/\` may be dormant — consider whether to onboard recent versions or remove the stale entries from \`src/\` so the monitor stops flagging them.`,
+                ``,
+                `---`,
+                `*This issue was automatically created by the Ubuntu Kernel Monitor workflow.*`,
+              ].join('\n');
+
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo:  context.repo.repo,
+                title,
+                body: issueBody,
+              });
+              console.log(`Created issue: ${title}`);
+            }
