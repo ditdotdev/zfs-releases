@@ -113,8 +113,9 @@ for version in $zfs_versions; do
 
     cd $build_dir/$release
 
-    # Check if container fell back to userspace-only (LinuxKit case)
-    # This can happen when kernel modules are not supported (CONFIG_MODULES=n)
+    # Check if the container fell back to userspace-only. Kept as a defensive
+    # check; no current code path in zfs-builder sets this marker now that the
+    # linuxkit code path is gone, but harmless if a future builder needs it.
     if [[ -f .zfs-userspace-only ]]; then
         echo "⚠️  Container detected userspace-only fallback, adjusting archive creation"
         zfs_config=user
