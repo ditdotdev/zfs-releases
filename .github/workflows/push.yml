@@ -41,10 +41,6 @@ jobs:
           - 6.8.0-100-generic
           - 6.8.0-101-generic
           - 6.8.0-106-generic
-        include:
-          # LinuxKit kernel is amd64 only
-          - arch: amd64
-            kernel: 6.6.71-linuxkit
     steps:
       - uses: actions/checkout@v6
       - name: Set up QEMU for cross-platform builds
@@ -77,20 +73,6 @@ jobs:
           - 6.8.0-100-generic
           - 6.8.0-101-generic
           - 6.8.0-106-generic
-        include:
-          # LinuxKit kernels are amd64 only
-          - arch: amd64
-            kernel: 6.6.71-linuxkit
-          - arch: amd64
-            kernel: 6.6.13-linuxkit
-          - arch: amd64
-            kernel: 5.15.27-linuxkit
-          - arch: amd64
-            kernel: 5.10.104-linuxkit
-          # Disabled: 5.15.0-25-generic has incompatible symbol exports (__x86_return_thunk, fault_in_iov_iter_readable, timer_delete_sync)
-          # See: https://github.com/datadatdat/zfs-releases/actions/runs/21638695810
-          # - arch: amd64
-          #   kernel: 5.15.0-25-generic
     steps:
       - uses: actions/checkout@v6
       - name: Set up QEMU for cross-platform builds
