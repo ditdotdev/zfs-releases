@@ -114,24 +114,12 @@ jobs:
               echo "$FOUND_SORTED" | sed 's/^/  /'
             fi
 
-            # Find highest build number for this family already in src/.
-            # We only flag archive entries with HIGHER build numbers — older
-            # versions are intentionally skipped (we don't backfill superseded
-            # kernels, only chase forward).
-            highest_in_src=0
-            for d in src/*/; do
-              k=$(basename "$d")
-              [[ $k =~ ^[0-9]+\.[0-9]+\.[0-9]+-[0-9]+-(generic|azure|aws|gcp)$ ]] || continue
-              k_family=$(echo "$k" | sed -E 's/^([0-9]+\.[0-9]+\.[0-9]+)-[0-9]+-(.+)$/\1-\2/')
-              [[ $k_family == "$family" ]] || continue
-              k_build=$(echo "$k" | sed -E 's/^[0-9]+\.[0-9]+\.[0-9]+-([0-9]+)-.+$/\1/')
-              (( k_build > highest_in_src )) && highest_in_src=$k_build
-            done
-            echo "Highest build in src/ for $family: $highest_in_src"
-
+            # Flag every published kernel that isn't already in src/. A
+            # customer may be running any kernel Canonical still ships in
+            # -updates or -security, so we surface the full gap rather than
+            # only chasing forward from the highest build we already have.
             for kernel in $FOUND_SORTED; do
-              k_build=$(echo "$kernel" | sed -E 's/^[0-9]+\.[0-9]+\.[0-9]+-([0-9]+)-.+$/\1/')
-              if (( k_build > highest_in_src )); then
+              if [[ ! -d "src/$kernel" ]]; then
                 echo "  NEW: $kernel"
                 NEW_BY_CODENAME[$codename]+="$kernel "
               fi
