@@ -23,7 +23,7 @@ jobs:
           echo "Latest stable ZFS: $LATEST"
 
   discover-kernels:
-    name: Discover kernels by codename
+    name: Discover (arch, kernel) pairs by codename
     runs-on: ubuntu-latest
     outputs:
       focal:    ${{ steps.bucket.outputs.focal }}
@@ -32,7 +32,7 @@ jobs:
       resolute: ${{ steps.bucket.outputs.resolute }}
     steps:
       - uses: actions/checkout@v6
-      - name: Bucket src/ kernels by Ubuntu codename
+      - name: Bucket src/ kernels by codename and filter by per-arch archive availability
         id: bucket
         shell: bash
         run: |
@@ -51,26 +51,86 @@ jobs:
             esac
           }
 
-          declare -A bucket
-          bucket[focal]=""; bucket[jammy]=""; bucket[noble]=""; bucket[resolute]=""
-
-          for d in src/*/; do
-            kernel=$(basename "$d")
-            [[ $kernel =~ ^[0-9]+\.[0-9]+\.[0-9]+-[0-9]+-(generic|azure|aws|gcp)$ ]] || continue
-            codename=$(codename_for "$kernel")
-            [[ -z $codename ]] && continue
-            bucket[$codename]+="$kernel "
+          # Step 1: query each codename's archive per-arch and collect the
+          # set of kernel package names actually available there. Cloud
+          # variants (azure, aws, gcp) have arch-specific publication
+          # histories — e.g. azure didn't have arm64 until ~5.4.0-1077,
+          # so older 5.4.0-*-azure exist only on amd64. We must respect
+          # those gaps or builds break with "Unable to locate package".
+          declare -A AVAIL
+          for codename in focal jammy noble resolute; do
+            for arch in amd64 arm64; do
+              case $arch in
+                amd64|i386)
+                  host_updates=http://archive.ubuntu.com/ubuntu
+                  host_security=http://security.ubuntu.com/ubuntu
+                  ;;
+                *)
+                  host_updates=http://ports.ubuntu.com/ubuntu-ports
+                  host_security=http://ports.ubuntu.com/ubuntu-ports
+                  ;;
+              esac
+              FOUND=""
+              for url in \
+                "${host_updates}/dists/${codename}-updates/main/binary-${arch}/Packages.gz" \
+                "${host_security}/dists/${codename}-security/main/binary-${arch}/Packages.gz"; do
+                tmpfile=$(mktemp)
+                if curl -sLf "$url" > "$tmpfile" 2>/dev/null; then
+                  pkgs=$(gunzip -c "$tmpfile" | \
+                    grep -oE '^Package: linux-image-[0-9]+\.[0-9]+\.[0-9]+-[0-9]+-(generic|azure|aws|gcp)$' | \
+                    sed 's/^Package: linux-image-//' || true)
+                  FOUND+=" $pkgs"
+                fi
+                rm -f "$tmpfile"
+              done
+              AVAIL[$codename:$arch]=$(echo "$FOUND" | tr ' ' '\n' | grep -v '^$' | sort -uV | tr '\n' ' ')
+            done
           done
 
+          # Step 2: bucket src/ contents by codename.
+          declare -A BUCKET
+          BUCKET[focal]=""; BUCKET[jammy]=""; BUCKET[noble]=""; BUCKET[resolute]=""
+          for d in src/*/; do
+            k=$(basename "$d")
+            [[ $k =~ ^[0-9]+\.[0-9]+\.[0-9]+-[0-9]+-(generic|azure|aws|gcp)$ ]] || continue
+            cn=$(codename_for "$k")
+            [[ -z $cn ]] && continue
+            BUCKET[$cn]+=" $k"
+          done
+
+          # Step 3: emit per-codename JSON arrays of {arch, kernel} include
+          # entries. Each pair is included only when the kernel is actually
+          # in that codename's arch archive. Kernels in src/ that don't
+          # appear in any arch's archive (e.g. dormant pre-LTS variants)
+          # are logged as orphans and produce no build jobs.
           for codename in focal jammy noble resolute; do
-            kernels=${bucket[$codename]}
-            if [[ -z ${kernels// } ]]; then
+            kernels=${BUCKET[$codename]:-}
+            entries=()
+            orphans=()
+            for k in $kernels; do
+              found_any=0
+              for arch in amd64 arm64; do
+                if [[ " ${AVAIL[$codename:$arch]} " == *" $k "* ]]; then
+                  entries+=("{\"arch\":\"$arch\",\"kernel\":\"$k\"}")
+                  found_any=1
+                fi
+              done
+              [[ $found_any -eq 0 ]] && orphans+=("$k")
+            done
+
+            if [[ ${#entries[@]} -eq 0 ]]; then
               json='[]'
             else
-              json=$(echo "$kernels" | tr ' ' '\n' | grep -v '^$' | sort -uV | jq -R . | jq -sc .)
+              old_ifs=$IFS; IFS=,
+              json="[${entries[*]}]"
+              IFS=$old_ifs
             fi
-            count=$(echo "$json" | jq 'length')
-            echo "$codename: $count kernels"
+
+            src_count=$(echo "$kernels" | tr ' ' '\n' | grep -v '^$' | wc -l)
+            echo "$codename: src=$src_count, build pairs=${#entries[@]}, orphans=${#orphans[@]}"
+            for o in "${orphans[@]}"; do
+              echo "  orphan (in src/, not in $codename archive any arch): $o"
+            done
             echo "$codename=$json" >> "$GITHUB_OUTPUT"
           done
 
@@ -86,8 +146,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [amd64, arm64]
-        kernel: ${{ fromJSON(needs.discover-kernels.outputs.focal) }}
+        include: ${{ fromJSON(needs.discover-kernels.outputs.focal) }}
     steps:
       - uses: actions/checkout@v6
       - name: Set up QEMU for cross-platform builds
@@ -112,8 +171,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [amd64, arm64]
-        kernel: ${{ fromJSON(needs.discover-kernels.outputs.focal) }}
+        include: ${{ fromJSON(needs.discover-kernels.outputs.focal) }}
     steps:
       - uses: actions/checkout@v6
       - name: Set up QEMU for cross-platform builds
@@ -139,8 +197,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [amd64, arm64]
-        kernel: ${{ fromJSON(needs.discover-kernels.outputs.jammy) }}
+        include: ${{ fromJSON(needs.discover-kernels.outputs.jammy) }}
     steps:
       - uses: actions/checkout@v6
       - name: Set up QEMU for cross-platform builds
@@ -165,8 +222,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [amd64, arm64]
-        kernel: ${{ fromJSON(needs.discover-kernels.outputs.jammy) }}
+        include: ${{ fromJSON(needs.discover-kernels.outputs.jammy) }}
     steps:
       - uses: actions/checkout@v6
       - name: Set up QEMU for cross-platform builds
@@ -192,8 +248,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [amd64, arm64]
-        kernel: ${{ fromJSON(needs.discover-kernels.outputs.noble) }}
+        include: ${{ fromJSON(needs.discover-kernels.outputs.noble) }}
     steps:
       - uses: actions/checkout@v6
       - name: Set up QEMU for cross-platform builds
@@ -218,8 +273,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [amd64, arm64]
-        kernel: ${{ fromJSON(needs.discover-kernels.outputs.noble) }}
+        include: ${{ fromJSON(needs.discover-kernels.outputs.noble) }}
     steps:
       - uses: actions/checkout@v6
       - name: Set up QEMU for cross-platform builds
@@ -246,8 +300,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [amd64, arm64]
-        kernel: ${{ fromJSON(needs.discover-kernels.outputs.resolute) }}
+        include: ${{ fromJSON(needs.discover-kernels.outputs.resolute) }}
     steps:
       - uses: actions/checkout@v6
       - name: Set up QEMU for cross-platform builds
@@ -272,8 +325,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [amd64, arm64]
-        kernel: ${{ fromJSON(needs.discover-kernels.outputs.resolute) }}
+        include: ${{ fromJSON(needs.discover-kernels.outputs.resolute) }}
     steps:
       - uses: actions/checkout@v6
       - name: Set up QEMU for cross-platform builds
