@@ -22,29 +22,72 @@ jobs:
           echo "zfs_version=$LATEST" >> "$GITHUB_OUTPUT"
           echo "Latest stable ZFS: $LATEST"
 
-  build_userland:
-    name: Build Userland (${{ matrix.arch }}, ${{ needs.resolve-zfs-version.outputs.zfs_version }}, ${{ matrix.kernel }})
-    needs: [resolve-zfs-version]
+  discover-kernels:
+    name: Discover kernels by codename
+    runs-on: ubuntu-latest
+    outputs:
+      focal:    ${{ steps.bucket.outputs.focal }}
+      jammy:    ${{ steps.bucket.outputs.jammy }}
+      noble:    ${{ steps.bucket.outputs.noble }}
+      resolute: ${{ steps.bucket.outputs.resolute }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Bucket src/ kernels by Ubuntu codename
+        id: bucket
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Mirrors ubuntu_codename_for_kernel() in zfs-builder/src/ubuntu.sh
+          # and the Ubuntu Kernel Monitor workflow. Keep these three in sync.
+          codename_for() {
+            case $1 in
+              5.4.0-*-generic)   echo focal ;;
+              5.15.0-*-generic)  echo jammy ;;
+              6.8.0-*-generic)   echo noble ;;
+              7.0.0-*-generic)   echo resolute ;;
+              5.4.0-*-azure|5.4.0-*-aws|5.4.0-*-gcp)        echo focal ;;
+              5.15.0-*-azure|5.15.0-*-aws|5.15.0-*-gcp)     echo jammy ;;
+              *-azure|*-aws|*-gcp)                          echo noble ;;
+            esac
+          }
+
+          declare -A bucket
+          bucket[focal]=""; bucket[jammy]=""; bucket[noble]=""; bucket[resolute]=""
+
+          for d in src/*/; do
+            kernel=$(basename "$d")
+            [[ $kernel =~ ^[0-9]+\.[0-9]+\.[0-9]+-[0-9]+-(generic|azure|aws|gcp)$ ]] || continue
+            codename=$(codename_for "$kernel")
+            [[ -z $codename ]] && continue
+            bucket[$codename]+="$kernel "
+          done
+
+          for codename in focal jammy noble resolute; do
+            kernels=${bucket[$codename]}
+            if [[ -z ${kernels// } ]]; then
+              json='[]'
+            else
+              json=$(echo "$kernels" | tr ' ' '\n' | grep -v '^$' | sort -uV | jq -R . | jq -sc .)
+            fi
+            count=$(echo "$json" | jq 'length')
+            echo "$codename: $count kernels"
+            echo "$codename=$json" >> "$GITHUB_OUTPUT"
+          done
+
+  # ---- focal (Ubuntu 20.04, 5.4.0-* generic + cloud) ----------------------
+  build_userland_focal:
+    name: Build Userland focal (${{ matrix.arch }}, ${{ needs.resolve-zfs-version.outputs.zfs_version }}, ${{ matrix.kernel }})
+    needs: [resolve-zfs-version, discover-kernels]
+    if: needs.discover-kernels.outputs.focal != '[]'
     runs-on: ubuntu-latest
     env:
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
     strategy:
       fail-fast: false
       matrix:
         arch: [amd64, arm64]
-        kernel:
-          - 6.8.0-64-generic
-          - 6.8.0-88-generic
-          - 6.8.0-90-generic
-          - 6.8.0-94-generic
-          - 6.8.0-100-generic
-          - 6.8.0-101-generic
-          - 6.8.0-106-generic
-          - 6.8.0-107-generic
-          - 6.8.0-110-generic
-          - 6.8.0-111-generic
-          - 7.0.0-15-generic
+        kernel: ${{ fromJSON(needs.discover-kernels.outputs.focal) }}
     steps:
       - uses: actions/checkout@v6
       - name: Set up QEMU for cross-platform builds
@@ -58,29 +101,179 @@ jobs:
       - name: Publish
         run: ./publish ${{ secrets.s3_bucket }}
 
-  build_kernel:
-    name: Build Kernel (${{ matrix.arch }}, ${{ needs.resolve-zfs-version.outputs.zfs_version }}, ${{ matrix.kernel }})
-    needs: [resolve-zfs-version]
+  build_kernel_focal:
+    name: Build Kernel focal (${{ matrix.arch }}, ${{ needs.resolve-zfs-version.outputs.zfs_version }}, ${{ matrix.kernel }})
+    needs: [resolve-zfs-version, discover-kernels]
+    if: needs.discover-kernels.outputs.focal != '[]'
     runs-on: ubuntu-latest
     env:
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
     strategy:
       fail-fast: false
       matrix:
         arch: [amd64, arm64]
-        kernel:
-          - 6.8.0-64-generic
-          - 6.8.0-88-generic
-          - 6.8.0-90-generic
-          - 6.8.0-94-generic
-          - 6.8.0-100-generic
-          - 6.8.0-101-generic
-          - 6.8.0-106-generic
-          - 6.8.0-107-generic
-          - 6.8.0-110-generic
-          - 6.8.0-111-generic
-          - 7.0.0-15-generic
+        kernel: ${{ fromJSON(needs.discover-kernels.outputs.focal) }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Set up QEMU for cross-platform builds
+        uses: docker/setup-qemu-action@v4
+      - name: Pull zfs-builder image
+        run: docker pull --platform linux/${{ matrix.arch }} datadatdat/zfs-builder:latest
+      - name: Build
+        env:
+          DOCKER_DEFAULT_PLATFORM: linux/${{ matrix.arch }}
+        run: ./build -k -b ${{ secrets.s3_bucket }} -a ${{ matrix.arch }} -z ${{ needs.resolve-zfs-version.outputs.zfs_version }} ${{ matrix.kernel }}
+      - name: Publish
+        run: ./publish ${{ secrets.s3_bucket }}
+
+  # ---- jammy (Ubuntu 22.04, 5.15.0-* generic + cloud) ---------------------
+  build_userland_jammy:
+    name: Build Userland jammy (${{ matrix.arch }}, ${{ needs.resolve-zfs-version.outputs.zfs_version }}, ${{ matrix.kernel }})
+    needs: [resolve-zfs-version, discover-kernels]
+    if: needs.discover-kernels.outputs.jammy != '[]'
+    runs-on: ubuntu-latest
+    env:
+      AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+        kernel: ${{ fromJSON(needs.discover-kernels.outputs.jammy) }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Set up QEMU for cross-platform builds
+        uses: docker/setup-qemu-action@v4
+      - name: Pull zfs-builder image
+        run: docker pull --platform linux/${{ matrix.arch }} datadatdat/zfs-builder:latest
+      - name: Build
+        env:
+          DOCKER_DEFAULT_PLATFORM: linux/${{ matrix.arch }}
+        run: ./build -u -b ${{ secrets.s3_bucket }} -a ${{ matrix.arch }} -z ${{ needs.resolve-zfs-version.outputs.zfs_version }} ${{ matrix.kernel }}
+      - name: Publish
+        run: ./publish ${{ secrets.s3_bucket }}
+
+  build_kernel_jammy:
+    name: Build Kernel jammy (${{ matrix.arch }}, ${{ needs.resolve-zfs-version.outputs.zfs_version }}, ${{ matrix.kernel }})
+    needs: [resolve-zfs-version, discover-kernels]
+    if: needs.discover-kernels.outputs.jammy != '[]'
+    runs-on: ubuntu-latest
+    env:
+      AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+        kernel: ${{ fromJSON(needs.discover-kernels.outputs.jammy) }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Set up QEMU for cross-platform builds
+        uses: docker/setup-qemu-action@v4
+      - name: Pull zfs-builder image
+        run: docker pull --platform linux/${{ matrix.arch }} datadatdat/zfs-builder:latest
+      - name: Build
+        env:
+          DOCKER_DEFAULT_PLATFORM: linux/${{ matrix.arch }}
+        run: ./build -k -b ${{ secrets.s3_bucket }} -a ${{ matrix.arch }} -z ${{ needs.resolve-zfs-version.outputs.zfs_version }} ${{ matrix.kernel }}
+      - name: Publish
+        run: ./publish ${{ secrets.s3_bucket }}
+
+  # ---- noble (Ubuntu 24.04, 6.8.0-* generic + 5.0/5.11/6.11/6.14/6.17 cloud) ---
+  build_userland_noble:
+    name: Build Userland noble (${{ matrix.arch }}, ${{ needs.resolve-zfs-version.outputs.zfs_version }}, ${{ matrix.kernel }})
+    needs: [resolve-zfs-version, discover-kernels]
+    if: needs.discover-kernels.outputs.noble != '[]'
+    runs-on: ubuntu-latest
+    env:
+      AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+        kernel: ${{ fromJSON(needs.discover-kernels.outputs.noble) }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Set up QEMU for cross-platform builds
+        uses: docker/setup-qemu-action@v4
+      - name: Pull zfs-builder image
+        run: docker pull --platform linux/${{ matrix.arch }} datadatdat/zfs-builder:latest
+      - name: Build
+        env:
+          DOCKER_DEFAULT_PLATFORM: linux/${{ matrix.arch }}
+        run: ./build -u -b ${{ secrets.s3_bucket }} -a ${{ matrix.arch }} -z ${{ needs.resolve-zfs-version.outputs.zfs_version }} ${{ matrix.kernel }}
+      - name: Publish
+        run: ./publish ${{ secrets.s3_bucket }}
+
+  build_kernel_noble:
+    name: Build Kernel noble (${{ matrix.arch }}, ${{ needs.resolve-zfs-version.outputs.zfs_version }}, ${{ matrix.kernel }})
+    needs: [resolve-zfs-version, discover-kernels]
+    if: needs.discover-kernels.outputs.noble != '[]'
+    runs-on: ubuntu-latest
+    env:
+      AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+        kernel: ${{ fromJSON(needs.discover-kernels.outputs.noble) }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Set up QEMU for cross-platform builds
+        uses: docker/setup-qemu-action@v4
+      - name: Pull zfs-builder image
+        run: docker pull --platform linux/${{ matrix.arch }} datadatdat/zfs-builder:latest
+      - name: Build
+        env:
+          DOCKER_DEFAULT_PLATFORM: linux/${{ matrix.arch }}
+        run: ./build -k -b ${{ secrets.s3_bucket }} -a ${{ matrix.arch }} -z ${{ needs.resolve-zfs-version.outputs.zfs_version }} ${{ matrix.kernel }}
+      - name: Publish
+        run: ./publish ${{ secrets.s3_bucket }}
+
+  # ---- resolute (Ubuntu 26.04, 7.0.0-* generic; kernel module build will
+  #               fail until OpenZFS ships 7.x support, tracked in #86) -----
+  build_userland_resolute:
+    name: Build Userland resolute (${{ matrix.arch }}, ${{ needs.resolve-zfs-version.outputs.zfs_version }}, ${{ matrix.kernel }})
+    needs: [resolve-zfs-version, discover-kernels]
+    if: needs.discover-kernels.outputs.resolute != '[]'
+    runs-on: ubuntu-latest
+    env:
+      AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+        kernel: ${{ fromJSON(needs.discover-kernels.outputs.resolute) }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Set up QEMU for cross-platform builds
+        uses: docker/setup-qemu-action@v4
+      - name: Pull zfs-builder image
+        run: docker pull --platform linux/${{ matrix.arch }} datadatdat/zfs-builder:latest
+      - name: Build
+        env:
+          DOCKER_DEFAULT_PLATFORM: linux/${{ matrix.arch }}
+        run: ./build -u -b ${{ secrets.s3_bucket }} -a ${{ matrix.arch }} -z ${{ needs.resolve-zfs-version.outputs.zfs_version }} ${{ matrix.kernel }}
+      - name: Publish
+        run: ./publish ${{ secrets.s3_bucket }}
+
+  build_kernel_resolute:
+    name: Build Kernel resolute (${{ matrix.arch }}, ${{ needs.resolve-zfs-version.outputs.zfs_version }}, ${{ matrix.kernel }})
+    needs: [resolve-zfs-version, discover-kernels]
+    if: needs.discover-kernels.outputs.resolute != '[]'
+    runs-on: ubuntu-latest
+    env:
+      AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+        kernel: ${{ fromJSON(needs.discover-kernels.outputs.resolute) }}
     steps:
       - uses: actions/checkout@v6
       - name: Set up QEMU for cross-platform builds
