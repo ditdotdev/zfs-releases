@@ -41,6 +41,7 @@ jobs:
           - 6.8.0-100-generic
           - 6.8.0-101-generic
           - 6.8.0-106-generic
+          - 7.0.0-15-generic
     steps:
       - uses: actions/checkout@v6
       - name: Set up QEMU for cross-platform builds
@@ -73,6 +74,7 @@ jobs:
           - 6.8.0-100-generic
           - 6.8.0-101-generic
           - 6.8.0-106-generic
+          - 7.0.0-15-generic
     steps:
       - uses: actions/checkout@v6
       - name: Set up QEMU for cross-platform builds
