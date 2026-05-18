@@ -26,7 +26,6 @@ jobs:
     name: Discover (arch, kernel) pairs by codename
     runs-on: ubuntu-latest
     outputs:
-      focal:    ${{ steps.bucket.outputs.focal }}
       jammy:    ${{ steps.bucket.outputs.jammy }}
       noble:    ${{ steps.bucket.outputs.noble }}
       resolute: ${{ steps.bucket.outputs.resolute }}
@@ -41,11 +40,9 @@ jobs:
           # and the Ubuntu Kernel Monitor workflow. Keep these three in sync.
           codename_for() {
             case $1 in
-              5.4.0-*-generic)   echo focal ;;
               5.15.0-*-generic)  echo jammy ;;
               6.8.0-*-generic)   echo noble ;;
               7.0.0-*-generic)   echo resolute ;;
-              5.4.0-*-azure|5.4.0-*-aws|5.4.0-*-gcp)        echo focal ;;
               5.15.0-*-azure|5.15.0-*-aws|5.15.0-*-gcp)     echo jammy ;;
               *-azure|*-aws|*-gcp)                          echo noble ;;
             esac
@@ -54,11 +51,12 @@ jobs:
           # Step 1: query each codename's archive per-arch and collect the
           # set of kernel package names actually available there. Cloud
           # variants (azure, aws, gcp) have arch-specific publication
-          # histories — e.g. azure didn't have arm64 until ~5.4.0-1077,
-          # so older 5.4.0-*-azure exist only on amd64. We must respect
-          # those gaps or builds break with "Unable to locate package".
+          # histories — e.g. some 6.x azure builds existed on amd64
+          # months before the matching arm64 packages landed. We must
+          # respect those gaps or builds break with "Unable to locate
+          # package".
           declare -A AVAIL
-          for codename in focal jammy noble resolute; do
+          for codename in jammy noble resolute; do
             for arch in amd64 arm64; do
               case $arch in
                 amd64|i386)
@@ -89,7 +87,7 @@ jobs:
 
           # Step 2: bucket src/ contents by codename.
           declare -A BUCKET
-          BUCKET[focal]=""; BUCKET[jammy]=""; BUCKET[noble]=""; BUCKET[resolute]=""
+          BUCKET[jammy]=""; BUCKET[noble]=""; BUCKET[resolute]=""
           for d in src/*/; do
             k=$(basename "$d")
             [[ $k =~ ^[0-9]+\.[0-9]+\.[0-9]+-[0-9]+-(generic|azure|aws|gcp)$ ]] || continue
@@ -103,7 +101,7 @@ jobs:
           # in that codename's arch archive. Kernels in src/ that don't
           # appear in any arch's archive (e.g. dormant pre-LTS variants)
           # are logged as orphans and produce no build jobs.
-          for codename in focal jammy noble resolute; do
+          for codename in jammy noble resolute; do
             kernels=${BUCKET[$codename]:-}
             entries=()
             orphans=()
@@ -133,57 +131,6 @@ jobs:
             done
             echo "$codename=$json" >> "$GITHUB_OUTPUT"
           done
-
-  # ---- focal (Ubuntu 20.04, 5.4.0-* generic + cloud) ----------------------
-  build_userland_focal:
-    name: Build Userland focal (${{ matrix.arch }}, ${{ needs.resolve-zfs-version.outputs.zfs_version }}, ${{ matrix.kernel }})
-    needs: [resolve-zfs-version, discover-kernels]
-    if: needs.discover-kernels.outputs.focal != '[]'
-    runs-on: ubuntu-latest
-    env:
-      AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include: ${{ fromJSON(needs.discover-kernels.outputs.focal) }}
-    steps:
-      - uses: actions/checkout@v6
-      - name: Set up QEMU for cross-platform builds
-        uses: docker/setup-qemu-action@v4
-      - name: Pull zfs-builder image
-        run: docker pull --platform linux/${{ matrix.arch }} datadatdat/zfs-builder:latest
-      - name: Build
-        env:
-          DOCKER_DEFAULT_PLATFORM: linux/${{ matrix.arch }}
-        run: ./build -u -b ${{ secrets.s3_bucket }} -a ${{ matrix.arch }} -z ${{ needs.resolve-zfs-version.outputs.zfs_version }} ${{ matrix.kernel }}
-      - name: Publish
-        run: ./publish ${{ secrets.s3_bucket }}
-
-  build_kernel_focal:
-    name: Build Kernel focal (${{ matrix.arch }}, ${{ needs.resolve-zfs-version.outputs.zfs_version }}, ${{ matrix.kernel }})
-    needs: [resolve-zfs-version, discover-kernels]
-    if: needs.discover-kernels.outputs.focal != '[]'
-    runs-on: ubuntu-latest
-    env:
-      AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include: ${{ fromJSON(needs.discover-kernels.outputs.focal) }}
-    steps:
-      - uses: actions/checkout@v6
-      - name: Set up QEMU for cross-platform builds
-        uses: docker/setup-qemu-action@v4
-      - name: Pull zfs-builder image
-        run: docker pull --platform linux/${{ matrix.arch }} datadatdat/zfs-builder:latest
-      - name: Build
-        env:
-          DOCKER_DEFAULT_PLATFORM: linux/${{ matrix.arch }}
-        run: ./build -k -b ${{ secrets.s3_bucket }} -a ${{ matrix.arch }} -z ${{ needs.resolve-zfs-version.outputs.zfs_version }} ${{ matrix.kernel }}
-      - name: Publish
-        run: ./publish ${{ secrets.s3_bucket }}
 
   # ---- jammy (Ubuntu 22.04, 5.15.0-* generic + cloud) ---------------------
   build_userland_jammy:
