@@ -82,7 +82,7 @@ jobs:
               return;
             }
 
-            const issueBody = `## New WSL2 Kernel Detected — ZFS Modules Missing
+            const issueBody = `## WSL2 ZFS Modules Missing in S3
 
             The following WSL2 kernel version(s) do not have ZFS ${zfsVersion} module builds in S3:
 
@@ -90,13 +90,13 @@ jobs:
 
             ### Action Required
 
-            Trigger the WSL2 module build workflow for the missing kernel versions:
+            \`wsl2-modules.yml\` builds its full \`wsl_kernel\` matrix on every dispatch and the per-cell S3 cache check skips kernels that are already built, so a single invocation is enough — it fans out into one parallel job per kernel and only rebuilds the missing ones:
 
             \`\`\`bash
-            ${missingKernels.map(k => `gh workflow run "WSL2 ZFS Module Build" --repo datadatdat/zfs-releases`).join('\n')}
+            gh workflow run "WSL2 ZFS Module Build" --repo datadatdat/zfs-releases
             \`\`\`
 
-            Or add the kernel versions to the build matrix in \`.github/workflows/wsl2-modules.yml\` and re-run.
+            If any of the kernels above are not yet in \`wsl2-modules.yml\`'s matrix, add them there first and then dispatch. (Most of the time the matrix is already in sync — this issue typically just means a new OpenZFS stable shipped and nothing has rebuilt against it yet.)
 
             ---
             *This issue was automatically created by the WSL2 Kernel Monitor workflow.*`;
