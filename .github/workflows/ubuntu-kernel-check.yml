@@ -27,11 +27,9 @@ jobs:
           # these in sync. Empty result = EOL series we no longer monitor.
           codename_for() {
             case $1 in
-              5.4.0-*-generic)   echo focal ;;
               5.15.0-*-generic)  echo jammy ;;
               6.8.0-*-generic)   echo noble ;;
               7.0.0-*-generic)   echo resolute ;;
-              5.4.0-*-azure|5.4.0-*-aws|5.4.0-*-gcp)        echo focal ;;
               5.15.0-*-azure|5.15.0-*-aws|5.15.0-*-gcp)     echo jammy ;;
               *-azure|*-aws|*-gcp)                          echo noble ;;
             esac
@@ -156,7 +154,6 @@ jobs:
         with:
           script: |
             const SERIES_NAMES = {
-              focal:    'Ubuntu 20.04 (focal)',
               jammy:    'Ubuntu 22.04 (jammy)',
               noble:    'Ubuntu 24.04 (noble)',
               resolute: 'Ubuntu 26.04 (resolute)',
