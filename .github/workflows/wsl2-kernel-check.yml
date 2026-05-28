@@ -8,6 +8,7 @@ on:
 permissions:
   contents: read
   issues: write
+  actions: write    # for workflow_dispatch of wsl2-modules.yml (issue #95)
 
 jobs:
   check_wsl2_kernels:
@@ -60,8 +61,31 @@ jobs:
             echo "All WSL2 kernels have ZFS module builds"
           fi
 
-      - name: Create issue for missing builds
+      # Close the loop: when archives are missing, dispatch the module build
+      # workflow directly instead of waiting for a human to read an issue and
+      # run `gh workflow run`. wsl2-modules.yml is idempotent — its per-cell
+      # S3 cache check skips kernels that already have archives, so a stray
+      # dispatch costs near-zero CI time. If the dispatch itself fails (auth
+      # problem, workflow renamed, etc.) we fall through to the legacy
+      # issue-filing path so the missing-archive signal isn't silently lost.
+      # Closes #95.
+      - name: Dispatch wsl2-modules.yml
+        id: dispatch
         if: steps.fetch.outputs.has_missing == 'true'
+        continue-on-error: true
+        uses: actions/github-script@v9
+        with:
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'wsl2-modules.yml',
+              ref: 'master',
+            });
+            console.log('Successfully dispatched wsl2-modules.yml');
+
+      - name: Create issue (dispatch failed fallback)
+        if: steps.fetch.outputs.has_missing == 'true' && steps.dispatch.outcome == 'failure'
         uses: actions/github-script@v9
         with:
           script: |
@@ -82,24 +106,22 @@ jobs:
               return;
             }
 
-            const issueBody = `## WSL2 ZFS Modules Missing in S3
+            const issueBody = `## WSL2 ZFS Modules Missing in S3 — auto-dispatch failed
 
             The following WSL2 kernel version(s) do not have ZFS ${zfsVersion} module builds in S3:
 
             ${kernelList}
 
-            ### Action Required
-
-            \`wsl2-modules.yml\` builds its full \`wsl_kernel\` matrix on every dispatch and the per-cell S3 cache check skips kernels that are already built, so a single invocation is enough — it fans out into one parallel job per kernel and only rebuilds the missing ones:
+            The monitor tried to dispatch \`wsl2-modules.yml\` directly to close the loop (#95) but the dispatch step failed. Falling back to manual:
 
             \`\`\`bash
             gh workflow run "WSL2 ZFS Module Build" --repo datadatdat/zfs-releases
             \`\`\`
 
-            If any of the kernels above are not yet in \`wsl2-modules.yml\`'s matrix, add them there first and then dispatch. (Most of the time the matrix is already in sync — this issue typically just means a new OpenZFS stable shipped and nothing has rebuilt against it yet.)
+            Check the monitor run logs to see why the dispatch call failed (most likely cause: \`wsl2-modules.yml\` was renamed or moved, or the \`actions: write\` permission was dropped). If any of the kernels above are not yet in \`wsl2-modules.yml\`'s matrix, add them there first.
 
             ---
-            *This issue was automatically created by the WSL2 Kernel Monitor workflow.*`;
+            *This issue was automatically created by the WSL2 Kernel Monitor workflow as a dispatch-failure fallback.*`;
 
             await github.rest.issues.create({
               owner: context.repo.owner,
