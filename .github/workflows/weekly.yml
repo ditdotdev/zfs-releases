@@ -44,7 +44,7 @@ jobs:
       - name: Set up QEMU for cross-platform builds
         uses: docker/setup-qemu-action@v4
       - name: Pull zfs-builder image
-        run: docker pull --platform linux/${{ matrix.arch }} datadatdat/zfs-builder:latest
+        run: docker pull --platform linux/${{ matrix.arch }} ditdotdev/zfs-builder:latest
       - name: Build
         env:
           DOCKER_DEFAULT_PLATFORM: linux/${{ matrix.arch }}
@@ -76,7 +76,7 @@ jobs:
       - name: Set up QEMU for cross-platform builds
         uses: docker/setup-qemu-action@v4
       - name: Pull zfs-builder image
-        run: docker pull --platform linux/${{ matrix.arch }} datadatdat/zfs-builder:latest
+        run: docker pull --platform linux/${{ matrix.arch }} ditdotdev/zfs-builder:latest
       - name: Build
         env:
           DOCKER_DEFAULT_PLATFORM: linux/${{ matrix.arch }}
@@ -118,7 +118,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Pull zfs-builder image
-        run: docker pull --platform linux/amd64 datadatdat/zfs-builder:latest
+        run: docker pull --platform linux/amd64 ditdotdev/zfs-builder:latest
       - name: Build
         env:
           DOCKER_DEFAULT_PLATFORM: linux/amd64

@@ -50,7 +50,7 @@ jobs:
       - name: Set up QEMU for cross-platform builds
         uses: docker/setup-qemu-action@v4
       - name: Pull zfs-builder image
-        run: docker pull --platform linux/${{ github.event.inputs.arch }} datadatdat/zfs-builder:latest
+        run: docker pull --platform linux/${{ github.event.inputs.arch }} ditdotdev/zfs-builder:latest
       - name: Build
         env:
           DOCKER_DEFAULT_PLATFORM: linux/${{ github.event.inputs.arch }}

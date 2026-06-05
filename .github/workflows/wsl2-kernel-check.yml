@@ -115,7 +115,7 @@ jobs:
             The monitor tried to dispatch \`wsl2-modules.yml\` directly to close the loop (#95) but the dispatch step failed. Falling back to manual:
 
             \`\`\`bash
-            gh workflow run "WSL2 ZFS Module Build" --repo datadatdat/zfs-releases
+            gh workflow run "WSL2 ZFS Module Build" --repo ditdotdev/zfs-releases
             \`\`\`
 
             Check the monitor run logs to see why the dispatch call failed (most likely cause: \`wsl2-modules.yml\` was renamed or moved, or the \`actions: write\` permission was dropped). If any of the kernels above are not yet in \`wsl2-modules.yml\`'s matrix, add them there first.

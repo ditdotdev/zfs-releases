@@ -1,7 +1,7 @@
 # ZFS Release Development
 
 For general information about contributing changes, see the
-[Contributor Guidelines](https://github.com/datadatdat/.github/blob/master/CONTRIBUTING.md).
+[Contributor Guidelines](https://github.com/ditdotdev/.github/blob/master/CONTRIBUTING.md).
 
 ## How it works
 
@@ -62,7 +62,7 @@ We build releases using GitHub Actions with three workflows:
    - Triggered via workflow_dispatch
    - Allows testing specific ZFS version + kernel combinations
 
-All workflows use the [zfs-builder](https://github.com/datadatdat/zfs-builder) 
+All workflows use the [zfs-builder](https://github.com/ditdotdev/zfs-builder) 
 Docker image, which provides a consistent build environment with all required 
 dependencies.
 

@@ -194,7 +194,7 @@ jobs:
         if: steps.cache.outputs.cached == 'false'
         run: |
           ARCHIVE="${{ steps.archive.outputs.archive }}"
-          URL="http://datadatdat-zfs-builds.s3-website-us-west-2.amazonaws.com/$ARCHIVE"
+          URL="http://dit-zfs-builds.s3-website-us-west-2.amazonaws.com/$ARCHIVE"
           HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$URL")
           echo "Verify URL: $URL -> HTTP $HTTP_CODE"
           test "$HTTP_CODE" = "200" || { echo "ERROR: S3 upload verification failed"; exit 1; }
