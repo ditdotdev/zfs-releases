@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright The Datadatdat Project Contributors.
+# Copyright The Dit Project Contributors.
 #
 
 set -x
@@ -13,7 +13,7 @@ src_dir=$PWD/src
 out_dir=$PWD/out
 archive_dir=$out_dir/archive
 build_dir=$out_dir/build
-zfs_builder=datadatdat/zfs-builder:latest
+zfs_builder=ditdotdev/zfs-builder:latest
 archive_bucket=
 arch=
 

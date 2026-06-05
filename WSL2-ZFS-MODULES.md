@@ -1,6 +1,6 @@
 # Plan: ZFS Module Loading via insmod for WSL2
 
-**Tracking issue:** https://github.com/datadatdat/datadatdat/issues/79
+**Tracking issue:** https://github.com/ditdotdev/dit/issues/79
 
 ## Context
 
@@ -54,7 +54,7 @@ Step 4: insmod prebuilt modules?   (download from S3 + insmod)
 
 ## Completed Work
 
-### Phase 1: datadatdat-server changes (PR #98 — MERGED)
+### Phase 1: dit-server changes (PR #98 — MERGED)
 - Simplified zfs.sh: 4-step chain replacing old 5-step chain
 - Added `install_zfs_packages()` with package manager detection
 - Added `insmod_prebuilt_zfs()` with S3 download + insmod
@@ -65,14 +65,14 @@ Step 4: insmod prebuilt modules?   (download from S3 + insmod)
 - 147/147 E2E tests pass on WSL2
 
 ### Phase 2: Install flow documentation (PR #85 — MERGED)
-- Updated DATADATDAT_INSTALL_FLOW.md with 4-step chain
+- Updated DIT_INSTALL_FLOW.md with 4-step chain
 - Added WSL2 notes for loop device pool creation
 - Removed zfs-builder from Docker images table
 
 ### Phase 3: CI workflow for WSL2 module builds (PR #64 — MERGED)
 - Added `wsl2-modules.yml` workflow
 - Successfully built and published ZFS 2.2.2 modules for kernel 6.6.87.2 to S3
-- Full E2E validated: fresh `d3 install` downloads from S3 and loads via insmod
+- Full E2E validated: fresh `dit install` downloads from S3 and loads via insmod
 
 ## Remaining Work
 
@@ -137,10 +137,10 @@ To force a rebuild, delete the archive from S3: `aws s3 rm s3://$BUCKET/$ARCHIVE
 
 ### Phase 6: ZFS version alignment across ecosystem
 
-**Goal:** Unify ZFS version selection across all datadatdat repos.
+**Goal:** Unify ZFS version selection across all dit repos.
 
 **Current state (inconsistent):**
-- `datadatdat-server` Dockerfile: `apt install zfsutils-linux` = 2.2.2 (Ubuntu 24.04 repos)
+- `dit-server` Dockerfile: `apt install zfsutils-linux` = 2.2.2 (Ubuntu 24.04 repos)
 - `zfs-releases` build matrix: builds 2.2.8 and 2.3.4 for linuxkit/generic kernels
 - `zfs-builder`: builds 2.3.4 (hardcoded in META)
 - WSL2 module build: currently 2.2.2 to match server Dockerfile userland
@@ -153,7 +153,7 @@ To force a rebuild, delete the archive from S3: `aws s3 rm s3://$BUCKET/$ARCHIVE
 
 ### Phase 7: Manual WSL2 version testing
 
-**Goal:** Validate `d3 install` + `make e2e` across multiple WSL2 versions.
+**Goal:** Validate `dit install` + `make e2e` across multiple WSL2 versions.
 
 **Approach:** Serial testing on the Windows host. Each WSL version requires a different kernel, and only one WSL instance runs at a time. Run each version test from an **elevated PowerShell**.
 
@@ -316,18 +316,18 @@ Write-Output "=== Docker hello-world test ==="
 docker run --rm hello-world
 ```
 
-**2f. Run d3 install:**
+**2f. Run dit install:**
 ```powershell
-Write-Output "=== Running d3 install ==="
-cd C:\dev\datadatdat\datadatdat
-.\d3.exe install
+Write-Output "=== Running dit install ==="
+cd C:\dev\dit\dit
+.\dit.exe install
 
 Write-Output "=== Checking containers ==="
 docker ps --format "table {{.Names}}`t{{.Status}}"
 
 Write-Output "=== Checking ZFS ==="
-docker exec datadatdat-docker-server zpool list
-docker exec datadatdat-docker-server zfs version
+docker exec dit-docker-server zpool list
+docker exec dit-docker-server zfs version
 ```
 
 **2g. Run E2E tests:**
@@ -348,7 +348,7 @@ Write-Output "Status:      PASS/FAIL (update manually)"
 Write-Output ""
 
 # Clean up for next test
-.\d3.exe uninstall -f
+.\dit.exe uninstall -f
 Get-Process -Name "Docker*", "com.docker*" -ErrorAction SilentlyContinue | Stop-Process -Force
 wsl --shutdown
 wsl --unregister Ubuntu 2>$null
@@ -369,7 +369,7 @@ wsl --install -d Ubuntu --no-launch
 
 #### Test Results
 
-| # | WSL MSI | Expected Kernel | Actual Kernel | d3 install | make e2e | Notes |
+| # | WSL MSI | Expected Kernel | Actual Kernel | dit install | make e2e | Notes |
 |---|---------|----------------|---------------|-----------|----------|-------|
 | 1 | 2.5.1 | 6.6.75.1 | | | | |
 | 2 | 2.5.7 | 6.6.87.1 | | | | |
@@ -385,11 +385,11 @@ Add `wsl2-kernel-check.yml` workflow (similar to `ubuntu-kernel-check.yml`):
 - If new kernel found and no S3 archive exists, triggers `wsl2-modules.yml`
 - Creates a GitHub issue for tracking
 
-### Phase 9: d3 install WSL2 detection
+### Phase 9: dit install WSL2 detection
 
 **Goal:** Detect WSL2 in the Go CLI and guide users.
 
-In `d3 install`:
+In `dit install`:
 1. Detect if running on Windows with WSL2 backend
 2. Check WSL2 kernel version via `wsl -e uname -r`
 3. If kernel < 6.6.36.3: recommend `wsl --update`
@@ -400,8 +400,8 @@ In `d3 install`:
 | Item | Action |
 |------|--------|
 | S3 bucket old precompiled module tarballs | Deprecate old format; new format includes userland |
-| `datadatdat/zfs-builder` WSL path (`src/wsl.sh`) | Keep on experiment branch only |
-| `datadatdat/docker-desktop-zfs-kernel` images | Deprecate |
+| `ditdotdev/zfs-builder` WSL path (`src/wsl.sh`) | Keep on experiment branch only |
+| `ditdotdev/docker-desktop-zfs-kernel` images | Deprecate |
 | zfs-builder bzImage CI workflows | Keep on experiment branch only |
 | 30-minute compile-from-source fallback | Removed from launch chain |
 | Issue #79 | Close after Phase 7 testing complete |
