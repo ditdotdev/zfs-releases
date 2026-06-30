@@ -40,7 +40,7 @@ jobs:
           - 6.8.0-90-generic
           - 6.8.0-94-generic
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Set up QEMU for cross-platform builds
         uses: docker/setup-qemu-action@v4
       - name: Pull zfs-builder image
@@ -72,7 +72,7 @@ jobs:
           - arch: amd64
             kernel: 6.8.0-64-generic
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Set up QEMU for cross-platform builds
         uses: docker/setup-qemu-action@v4
       - name: Pull zfs-builder image
@@ -87,7 +87,7 @@ jobs:
   get_kernels_ubuntu-24:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v6
         with:
           go-version: '1.26.2'
@@ -116,7 +116,7 @@ jobs:
       matrix:
         kernels: ${{ fromJson(needs.get_kernels_ubuntu-24.outputs.matrix) }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Pull zfs-builder image
         run: docker pull --platform linux/amd64 ditdotdev/zfs-builder:latest
       - name: Build

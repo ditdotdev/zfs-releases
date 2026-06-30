@@ -14,7 +14,7 @@ jobs:
     name: Check for new Ubuntu kernels
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Discover families from src/ and check Ubuntu archives
         id: fetch

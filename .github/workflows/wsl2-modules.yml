@@ -60,7 +60,7 @@ jobs:
       WSL_KERNEL: ${{ matrix.wsl_kernel }}
       ZFS_VERSION: ${{ needs.resolve-zfs-version.outputs.zfs_version }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set archive name
         id: archive
