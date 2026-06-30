@@ -30,7 +30,7 @@ jobs:
       noble:    ${{ steps.bucket.outputs.noble }}
       resolute: ${{ steps.bucket.outputs.resolute }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Bucket src/ kernels by codename and filter by per-arch archive availability
         id: bucket
         shell: bash
@@ -146,7 +146,7 @@ jobs:
       matrix:
         include: ${{ fromJSON(needs.discover-kernels.outputs.jammy) }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Set up QEMU for cross-platform builds
         uses: docker/setup-qemu-action@v4
       - name: Pull zfs-builder image
@@ -171,7 +171,7 @@ jobs:
       matrix:
         include: ${{ fromJSON(needs.discover-kernels.outputs.jammy) }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Set up QEMU for cross-platform builds
         uses: docker/setup-qemu-action@v4
       - name: Pull zfs-builder image
@@ -197,7 +197,7 @@ jobs:
       matrix:
         include: ${{ fromJSON(needs.discover-kernels.outputs.noble) }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Set up QEMU for cross-platform builds
         uses: docker/setup-qemu-action@v4
       - name: Pull zfs-builder image
@@ -222,7 +222,7 @@ jobs:
       matrix:
         include: ${{ fromJSON(needs.discover-kernels.outputs.noble) }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Set up QEMU for cross-platform builds
         uses: docker/setup-qemu-action@v4
       - name: Pull zfs-builder image
@@ -249,7 +249,7 @@ jobs:
       matrix:
         include: ${{ fromJSON(needs.discover-kernels.outputs.resolute) }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Set up QEMU for cross-platform builds
         uses: docker/setup-qemu-action@v4
       - name: Pull zfs-builder image
@@ -274,7 +274,7 @@ jobs:
       matrix:
         include: ${{ fromJSON(needs.discover-kernels.outputs.resolute) }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Set up QEMU for cross-platform builds
         uses: docker/setup-qemu-action@v4
       - name: Pull zfs-builder image
