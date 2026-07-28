@@ -26,19 +26,27 @@ jobs:
           echo "Latest stable ZFS: $LATEST"
 
   discover-kernels:
-    name: Discover (arch, kernel) pairs by codename
+    name: Discover missing (arch, kernel) build pairs
+    needs: [resolve-zfs-version]
     runs-on: ubuntu-latest
+    env:
+      AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION:    us-west-2
     outputs:
       jammy:    ${{ steps.bucket.outputs.jammy }}
       noble:    ${{ steps.bucket.outputs.noble }}
       resolute: ${{ steps.bucket.outputs.resolute }}
+      userland: ${{ steps.bucket.outputs.userland }}
     steps:
       - uses: actions/checkout@v7
-      - name: Bucket src/ kernels by codename and filter by per-arch archive availability
+      - name: Bucket src/ kernels by codename, filter by archive availability and S3 state
         id: bucket
         shell: bash
         run: |
           set -euo pipefail
+          ZV="${{ needs.resolve-zfs-version.outputs.zfs_version }}"
+
           # Mirrors ubuntu_codename_for_kernel() in zfs-builder/src/ubuntu.sh
           # and the Ubuntu Kernel Monitor workflow. Keep these three in sync.
           codename_for() {
@@ -51,8 +59,18 @@ jobs:
             esac
           }
 
-          # Step 1: query each codename's archive per-arch and collect the
-          # set of kernel package names actually available there. Cloud
+          # Step 1: fetch the set of artifacts already published for this ZFS
+          # version. Pairs whose archive already exists produce no build job;
+          # the archive_exists check inside ./build remains as a safety net.
+          # A listing failure fails this job (and thus skips all builds)
+          # rather than silently rebuilding the world.
+          EXISTING=$(aws s3api list-objects-v2 --bucket "${{ secrets.s3_bucket }}" \
+            --prefix "zfs-${ZV}-" --query 'Contents[].Key' --output text | tr '\t' '\n')
+          echo "S3 artifacts for zfs-$ZV: $(echo "$EXISTING" | grep -c . || true)"
+          in_s3() { grep -qxF "$1" <<< "$EXISTING"; }
+
+          # Step 2: query each codename's package archive per-arch and collect
+          # the set of kernel package names actually available there. Cloud
           # variants (azure, aws, gcp) have arch-specific publication
           # histories — e.g. some 6.x azure builds existed on amd64
           # months before the matching arm64 packages landed. We must
@@ -88,7 +106,7 @@ jobs:
             done
           done
 
-          # Step 2: bucket src/ contents by codename.
+          # Step 3: bucket src/ contents by codename.
           declare -A BUCKET
           BUCKET[jammy]=""; BUCKET[noble]=""; BUCKET[resolute]=""
           for d in src/*/; do
@@ -99,21 +117,30 @@ jobs:
             BUCKET[$cn]+=" $k"
           done
 
-          # Step 3: emit per-codename JSON arrays of {arch, kernel} include
-          # entries. Each pair is included only when the kernel is actually
-          # in that codename's arch archive. Kernels in src/ that don't
-          # appear in any arch's archive (e.g. dormant pre-LTS variants)
-          # are logged as orphans and produce no build jobs.
+          # Step 4: emit per-codename JSON arrays of {arch, kernel} include
+          # entries for KERNEL builds. Each pair is included only when the
+          # kernel is in that codename's arch archive AND its artifact is not
+          # already in S3. Kernels in src/ that don't appear in any arch's
+          # archive (e.g. dormant pre-LTS variants) are logged as orphans.
+          # Also track a representative buildable kernel per arch for the
+          # userland matrix below.
+          declare -A REP
           for codename in jammy noble resolute; do
             kernels=${BUCKET[$codename]:-}
             entries=()
             orphans=()
+            skipped=0
             for k in $kernels; do
               found_any=0
               for arch in amd64 arm64; do
                 if [[ " ${AVAIL[$codename:$arch]} " == *" $k "* ]]; then
-                  entries+=("{\"arch\":\"$arch\",\"kernel\":\"$k\"}")
                   found_any=1
+                  [[ -z ${REP[$arch]:-} ]] && REP[$arch]=$k
+                  if in_s3 "zfs-$ZV-$k-$arch.tar.gz"; then
+                    skipped=$((skipped+1))
+                  else
+                    entries+=("{\"arch\":\"$arch\",\"kernel\":\"$k\"}")
+                  fi
                 fi
               done
               [[ $found_any -eq 0 ]] && orphans+=("$k")
@@ -128,30 +155,54 @@ jobs:
             fi
 
             src_count=$(echo "$kernels" | tr ' ' '\n' | grep -v '^$' | wc -l)
-            echo "$codename: src=$src_count, build pairs=${#entries[@]}, orphans=${#orphans[@]}"
+            echo "$codename: src=$src_count, to build=${#entries[@]}, already in S3=$skipped, orphans=${#orphans[@]}"
             for o in "${orphans[@]}"; do
               echo "  orphan (in src/, not in $codename archive any arch): $o"
             done
             echo "$codename=$json" >> "$GITHUB_OUTPUT"
           done
 
-  # ---- jammy (Ubuntu 22.04, 5.15.0-* generic + cloud) ---------------------
-  build_userland_jammy:
-    name: Build Userland jammy (${{ matrix.arch }}, ${{ needs.resolve-zfs-version.outputs.zfs_version }}, ${{ matrix.kernel }})
+          # Step 5: userland matrix. The userland archive name is
+          # zfs-<version>-userland-<arch>.tar.gz — it has no kernel component,
+          # so exactly one build per arch is needed (previously one job per
+          # (arch, kernel) pair raced to produce the same file). Each arch
+          # builds against a representative kernel from src/.
+          u_entries=()
+          for arch in amd64 arm64; do
+            if ! in_s3 "zfs-$ZV-userland-$arch.tar.gz"; then
+              if [[ -n ${REP[$arch]:-} ]]; then
+                u_entries+=("{\"arch\":\"$arch\",\"kernel\":\"${REP[$arch]}\"}")
+              else
+                echo "userland: no buildable kernel found for $arch, cannot build"
+              fi
+            fi
+          done
+          if [[ ${#u_entries[@]} -eq 0 ]]; then
+            u_json='[]'
+          else
+            old_ifs=$IFS; IFS=,
+            u_json="[${u_entries[*]}]"
+            IFS=$old_ifs
+          fi
+          echo "userland: to build=${#u_entries[@]}"
+          echo "userland=$u_json" >> "$GITHUB_OUTPUT"
+
+  # Userland is built once per arch (see Step 5 above), natively on
+  # arch-matched runners — no QEMU emulation.
+  build_userland:
+    name: Build Userland (${{ matrix.arch }}, ${{ needs.resolve-zfs-version.outputs.zfs_version }})
     needs: [resolve-zfs-version, discover-kernels]
-    if: needs.discover-kernels.outputs.jammy != '[]'
-    runs-on: ubuntu-latest
+    if: needs.discover-kernels.outputs.userland != '[]'
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     env:
       AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(needs.discover-kernels.outputs.jammy) }}
+        include: ${{ fromJSON(needs.discover-kernels.outputs.userland) }}
     steps:
       - uses: actions/checkout@v7
-      - name: Set up QEMU for cross-platform builds
-        uses: docker/setup-qemu-action@v4
       - name: Pull zfs-builder image
         run: docker pull --platform linux/${{ matrix.arch }} ditdotdev/zfs-builder:latest
       - name: Build
@@ -161,11 +212,12 @@ jobs:
       - name: Publish
         run: ./publish ${{ secrets.s3_bucket }}
 
+  # ---- jammy (Ubuntu 22.04, 5.15.0-* generic + cloud) ---------------------
   build_kernel_jammy:
     name: Build Kernel jammy (${{ matrix.arch }}, ${{ needs.resolve-zfs-version.outputs.zfs_version }}, ${{ matrix.kernel }})
     needs: [resolve-zfs-version, discover-kernels]
     if: needs.discover-kernels.outputs.jammy != '[]'
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     env:
       AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -175,8 +227,6 @@ jobs:
         include: ${{ fromJSON(needs.discover-kernels.outputs.jammy) }}
     steps:
       - uses: actions/checkout@v7
-      - name: Set up QEMU for cross-platform builds
-        uses: docker/setup-qemu-action@v4
       - name: Pull zfs-builder image
         run: docker pull --platform linux/${{ matrix.arch }} ditdotdev/zfs-builder:latest
       - name: Build
@@ -187,36 +237,11 @@ jobs:
         run: ./publish ${{ secrets.s3_bucket }}
 
   # ---- noble (Ubuntu 24.04, 6.8.0-* generic + 5.0/5.11/6.11/6.14/6.17 cloud) ---
-  build_userland_noble:
-    name: Build Userland noble (${{ matrix.arch }}, ${{ needs.resolve-zfs-version.outputs.zfs_version }}, ${{ matrix.kernel }})
-    needs: [resolve-zfs-version, discover-kernels]
-    if: needs.discover-kernels.outputs.noble != '[]'
-    runs-on: ubuntu-latest
-    env:
-      AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include: ${{ fromJSON(needs.discover-kernels.outputs.noble) }}
-    steps:
-      - uses: actions/checkout@v7
-      - name: Set up QEMU for cross-platform builds
-        uses: docker/setup-qemu-action@v4
-      - name: Pull zfs-builder image
-        run: docker pull --platform linux/${{ matrix.arch }} ditdotdev/zfs-builder:latest
-      - name: Build
-        env:
-          DOCKER_DEFAULT_PLATFORM: linux/${{ matrix.arch }}
-        run: ./build -u -b ${{ secrets.s3_bucket }} -a ${{ matrix.arch }} -z ${{ needs.resolve-zfs-version.outputs.zfs_version }} ${{ matrix.kernel }}
-      - name: Publish
-        run: ./publish ${{ secrets.s3_bucket }}
-
   build_kernel_noble:
     name: Build Kernel noble (${{ matrix.arch }}, ${{ needs.resolve-zfs-version.outputs.zfs_version }}, ${{ matrix.kernel }})
     needs: [resolve-zfs-version, discover-kernels]
     if: needs.discover-kernels.outputs.noble != '[]'
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     env:
       AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -226,8 +251,6 @@ jobs:
         include: ${{ fromJSON(needs.discover-kernels.outputs.noble) }}
     steps:
       - uses: actions/checkout@v7
-      - name: Set up QEMU for cross-platform builds
-        uses: docker/setup-qemu-action@v4
       - name: Pull zfs-builder image
         run: docker pull --platform linux/${{ matrix.arch }} ditdotdev/zfs-builder:latest
       - name: Build
@@ -237,38 +260,12 @@ jobs:
       - name: Publish
         run: ./publish ${{ secrets.s3_bucket }}
 
-  # ---- resolute (Ubuntu 26.04, 7.0.0-* generic; kernel module build will
-  #               fail until OpenZFS ships 7.x support, tracked in #86) -----
-  build_userland_resolute:
-    name: Build Userland resolute (${{ matrix.arch }}, ${{ needs.resolve-zfs-version.outputs.zfs_version }}, ${{ matrix.kernel }})
-    needs: [resolve-zfs-version, discover-kernels]
-    if: needs.discover-kernels.outputs.resolute != '[]'
-    runs-on: ubuntu-latest
-    env:
-      AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include: ${{ fromJSON(needs.discover-kernels.outputs.resolute) }}
-    steps:
-      - uses: actions/checkout@v7
-      - name: Set up QEMU for cross-platform builds
-        uses: docker/setup-qemu-action@v4
-      - name: Pull zfs-builder image
-        run: docker pull --platform linux/${{ matrix.arch }} ditdotdev/zfs-builder:latest
-      - name: Build
-        env:
-          DOCKER_DEFAULT_PLATFORM: linux/${{ matrix.arch }}
-        run: ./build -u -b ${{ secrets.s3_bucket }} -a ${{ matrix.arch }} -z ${{ needs.resolve-zfs-version.outputs.zfs_version }} ${{ matrix.kernel }}
-      - name: Publish
-        run: ./publish ${{ secrets.s3_bucket }}
-
+  # ---- resolute (Ubuntu 26.04, 7.0.0-* generic) ---------------------------
   build_kernel_resolute:
     name: Build Kernel resolute (${{ matrix.arch }}, ${{ needs.resolve-zfs-version.outputs.zfs_version }}, ${{ matrix.kernel }})
     needs: [resolve-zfs-version, discover-kernels]
     if: needs.discover-kernels.outputs.resolute != '[]'
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     env:
       AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -278,8 +275,6 @@ jobs:
         include: ${{ fromJSON(needs.discover-kernels.outputs.resolute) }}
     steps:
       - uses: actions/checkout@v7
-      - name: Set up QEMU for cross-platform builds
-        uses: docker/setup-qemu-action@v4
       - name: Pull zfs-builder image
         run: docker pull --platform linux/${{ matrix.arch }} ditdotdev/zfs-builder:latest
       - name: Build

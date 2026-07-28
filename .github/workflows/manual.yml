@@ -17,6 +17,10 @@ on:
         description: "architecture (amd64 or arm64)"
         required: true
         default: "amd64"
+      dry_run:
+        description: "build even if the artifact exists in S3, and do not publish"
+        required: false
+        default: "false"
 
 permissions:
   contents: read
@@ -44,19 +48,24 @@ jobs:
   build_kernel:
     name: Build Kernel (${{ needs.resolve-zfs-version.outputs.zfs_version }}, ${{ github.event.inputs.kernel }}, ${{ github.event.inputs.arch }})
     needs: [resolve-zfs-version]
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event.inputs.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
     steps:
       - uses: actions/checkout@v7
-      - name: Set up QEMU for cross-platform builds
-        uses: docker/setup-qemu-action@v4
       - name: Pull zfs-builder image
         run: docker pull --platform linux/${{ github.event.inputs.arch }} ditdotdev/zfs-builder:latest
       - name: Build
         env:
           DOCKER_DEFAULT_PLATFORM: linux/${{ github.event.inputs.arch }}
-        run: ./build -k -b ${{ secrets.s3_bucket }} -a ${{ github.event.inputs.arch }} -z ${{ needs.resolve-zfs-version.outputs.zfs_version }} ${{ github.event.inputs.kernel }}
+        # dry_run omits -b so the S3 existence check cannot skip the build
+        run: |
+          if [[ "${{ github.event.inputs.dry_run }}" == "true" ]]; then
+            ./build -k -a ${{ github.event.inputs.arch }} -z ${{ needs.resolve-zfs-version.outputs.zfs_version }} ${{ github.event.inputs.kernel }}
+          else
+            ./build -k -b ${{ secrets.s3_bucket }} -a ${{ github.event.inputs.arch }} -z ${{ needs.resolve-zfs-version.outputs.zfs_version }} ${{ github.event.inputs.kernel }}
+          fi
       - name: Publish
+        if: github.event.inputs.dry_run != 'true'
         run: ./publish ${{ secrets.s3_bucket }}
