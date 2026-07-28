@@ -206,7 +206,7 @@ jobs:
   # Userland is built once per arch (see Step 5 above), natively on
   # arch-matched runners — no QEMU emulation.
   build_userland:
-    name: Build Userland (${{ matrix.arch }}, ${{ needs.resolve-zfs-version.outputs.zfs_version }})
+    name: Build Userland
     needs: [resolve-zfs-version, discover-kernels]
     if: needs.discover-kernels.outputs.userland != '[]'
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
@@ -230,7 +230,7 @@ jobs:
 
   # ---- jammy (Ubuntu 22.04, 5.15.0-* generic + cloud) ---------------------
   build_kernel_jammy:
-    name: Build Kernel jammy (${{ matrix.arch }}, ${{ needs.resolve-zfs-version.outputs.zfs_version }}, ${{ matrix.kernel }})
+    name: Build Kernel jammy
     needs: [resolve-zfs-version, discover-kernels]
     if: needs.discover-kernels.outputs.jammy != '[]'
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
@@ -254,7 +254,7 @@ jobs:
 
   # ---- noble (Ubuntu 24.04, 6.8.0-* generic + 5.0/5.11/6.11/6.14/6.17 cloud) ---
   build_kernel_noble:
-    name: Build Kernel noble (${{ matrix.arch }}, ${{ needs.resolve-zfs-version.outputs.zfs_version }}, ${{ matrix.kernel }})
+    name: Build Kernel noble
     needs: [resolve-zfs-version, discover-kernels]
     if: needs.discover-kernels.outputs.noble != '[]'
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
@@ -278,7 +278,7 @@ jobs:
 
   # ---- resolute (Ubuntu 26.04, 7.0.0-* generic) ---------------------------
   build_kernel_resolute:
-    name: Build Kernel resolute (${{ matrix.arch }}, ${{ needs.resolve-zfs-version.outputs.zfs_version }}, ${{ matrix.kernel }})
+    name: Build Kernel resolute
     needs: [resolve-zfs-version, discover-kernels]
     if: needs.discover-kernels.outputs.resolute != '[]'
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
