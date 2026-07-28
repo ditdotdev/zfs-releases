@@ -34,13 +34,23 @@ jobs:
     steps:
       - name: Determine ZFS version
         id: resolve
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if [[ -n "${{ github.event.inputs.zfs }}" ]]; then
             echo "zfs_version=${{ github.event.inputs.zfs }}" >> "$GITHUB_OUTPUT"
             echo "Using override: ${{ github.event.inputs.zfs }}"
           else
-            LATEST=$(curl -s https://api.github.com/repos/openzfs/zfs/releases | \
+            # Authenticated request: unauthenticated calls share the runner
+            # IP's 60/hr rate limit and can return an error object, yielding
+            # an empty version.
+            LATEST=$(curl -sf -H "Authorization: Bearer $GH_TOKEN" \
+                https://api.github.com/repos/openzfs/zfs/releases | \
               jq -r '[.[] | select(.prerelease == false)] | first | .tag_name' | sed 's/^zfs-//')
+            if [[ ! $LATEST =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+              echo "Failed to resolve ZFS version (got: '$LATEST')" >&2
+              exit 1
+            fi
             echo "zfs_version=$LATEST" >> "$GITHUB_OUTPUT"
             echo "Latest stable ZFS: $LATEST"
           fi

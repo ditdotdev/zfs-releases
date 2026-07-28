@@ -19,9 +19,19 @@ jobs:
     steps:
       - name: Determine ZFS version
         id: resolve
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          LATEST=$(curl -s https://api.github.com/repos/openzfs/zfs/releases | \
+          # Authenticated request: unauthenticated calls share the runner
+          # IP's 60/hr rate limit and intermittently return an error object,
+          # which once produced an empty version and a full bogus matrix.
+          LATEST=$(curl -sf -H "Authorization: Bearer $GH_TOKEN" \
+              https://api.github.com/repos/openzfs/zfs/releases | \
             jq -r '[.[] | select(.prerelease == false)] | first | .tag_name' | sed 's/^zfs-//')
+          if [[ ! $LATEST =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            echo "Failed to resolve ZFS version (got: '$LATEST')" >&2
+            exit 1
+          fi
           echo "zfs_version=$LATEST" >> "$GITHUB_OUTPUT"
           echo "Latest stable ZFS: $LATEST"
 
@@ -46,6 +56,12 @@ jobs:
         run: |
           set -euo pipefail
           ZV="${{ needs.resolve-zfs-version.outputs.zfs_version }}"
+          # Refuse to discover against a malformed version — an empty ZV
+          # would make every artifact look missing and spawn a full matrix.
+          if [[ ! $ZV =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            echo "Invalid zfs_version: '$ZV'" >&2
+            exit 1
+          fi
 
           # Mirrors ubuntu_codename_for_kernel() in zfs-builder/src/ubuntu.sh
           # and the Ubuntu Kernel Monitor workflow. Keep these three in sync.
