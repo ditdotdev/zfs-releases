@@ -110,15 +110,27 @@ jobs:
                 "${host_updates}/dists/${codename}-updates/main/binary-${arch}/Packages.gz" \
                 "${host_security}/dists/${codename}-security/main/binary-${arch}/Packages.gz"; do
                 tmpfile=$(mktemp)
-                if curl -sLf "$url" > "$tmpfile" 2>/dev/null; then
+                # --max-time bounds each fetch: the Ubuntu mirrors sometimes
+                # crawl or stall mid-transfer, and an unbounded curl hangs the
+                # whole job with no output.
+                if curl -sLf --max-time 60 --retry 2 "$url" > "$tmpfile" 2>/dev/null; then
                   pkgs=$(gunzip -c "$tmpfile" | \
                     grep -oE '^Package: linux-image-[0-9]+\.[0-9]+\.[0-9]+-[0-9]+-(generic|azure|aws|gcp)$' | \
                     sed 's/^Package: linux-image-//' || true)
                   FOUND+=" $pkgs"
+                  echo "fetched $url"
+                else
+                  echo "WARNING: failed to fetch $url"
                 fi
                 rm -f "$tmpfile"
               done
-              AVAIL[$codename:$arch]=$(echo "$FOUND" | tr ' ' '\n' | grep -v '^$' | sort -uV | tr '\n' ' ')
+              # || true: with pipefail, grep -v exits 1 on empty input, which
+              # would silently kill the whole script via set -e. An empty
+              # archive set must instead degrade to the orphan handling below.
+              AVAIL[$codename:$arch]=$(echo "$FOUND" | tr ' ' '\n' | grep -v '^$' | sort -uV | tr '\n' ' ' || true)
+              if [[ -z ${AVAIL[$codename:$arch]// /} ]]; then
+                echo "WARNING: no kernel packages found for $codename/$arch (both archive fetches failed?)"
+              fi
             done
           done
 
@@ -170,7 +182,7 @@ jobs:
               IFS=$old_ifs
             fi
 
-            src_count=$(echo "$kernels" | tr ' ' '\n' | grep -v '^$' | wc -l)
+            src_count=$(echo "$kernels" | tr ' ' '\n' | grep -v '^$' | wc -l || true)
             echo "$codename: src=$src_count, to build=${#entries[@]}, already in S3=$skipped, orphans=${#orphans[@]}"
             for o in "${orphans[@]}"; do
               echo "  orphan (in src/, not in $codename archive any arch): $o"
