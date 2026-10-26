@@ -1,6 +1,6 @@
 module zfs-releases
 
-go 1.26.9
+go 1.26.10
 
 require (
 	github.com/google/go-github/v39 v39.2.0
