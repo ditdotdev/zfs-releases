@@ -6,7 +6,7 @@ package main
 import (
 	"testing"
 
-	"github.com/google/go-github/v39/github"
+	"github.com/google/go-github/v93/github"
 )
 
 func TestDedupeEmpty(t *testing.T) {
@@ -131,9 +131,9 @@ func strPtr(s string) *string { return &s }
 
 func TestExtractKernelsSingleVariant(t *testing.T) {
 	releases := []*github.RepositoryRelease{
-		{TagName: strPtr("ubuntu22/20240101"), Body: strPtr("- Kernel Version: 6.5.0-44-generic\n")},
-		{TagName: strPtr("ubuntu24/20240101"), Body: strPtr("- Kernel Version: 6.8.0-90-generic\n")},
-		{TagName: strPtr("windows2022/20240101"), Body: strPtr("No kernel info\n")},
+		{TagName: "ubuntu22/20240101", Body: strPtr("- Kernel Version: 6.5.0-44-generic\n")},
+		{TagName: "ubuntu24/20240101", Body: strPtr("- Kernel Version: 6.8.0-90-generic\n")},
+		{TagName: "windows2022/20240101", Body: strPtr("No kernel info\n")},
 	}
 
 	result := extractKernels(releases, "ubuntu22")
@@ -147,9 +147,9 @@ func TestExtractKernelsSingleVariant(t *testing.T) {
 
 func TestExtractKernelsMultipleVariants(t *testing.T) {
 	releases := []*github.RepositoryRelease{
-		{TagName: strPtr("ubuntu22/20240101"), Body: strPtr("- Kernel Version: 6.5.0-44-generic\n")},
-		{TagName: strPtr("ubuntu24/20240101"), Body: strPtr("- Kernel Version: 6.8.0-90-generic\n")},
-		{TagName: strPtr("windows2022/20240101"), Body: strPtr("No kernel info\n")},
+		{TagName: "ubuntu22/20240101", Body: strPtr("- Kernel Version: 6.5.0-44-generic\n")},
+		{TagName: "ubuntu24/20240101", Body: strPtr("- Kernel Version: 6.8.0-90-generic\n")},
+		{TagName: "windows2022/20240101", Body: strPtr("No kernel info\n")},
 	}
 
 	result := extractKernels(releases, "ubuntu22,ubuntu24")
@@ -166,7 +166,7 @@ func TestExtractKernelsMultipleVariants(t *testing.T) {
 
 func TestExtractKernelsNoMatchingVariant(t *testing.T) {
 	releases := []*github.RepositoryRelease{
-		{TagName: strPtr("windows2022/20240101"), Body: strPtr("- Kernel Version: 6.5.0\n")},
+		{TagName: "windows2022/20240101", Body: strPtr("- Kernel Version: 6.5.0\n")},
 	}
 
 	result := extractKernels(releases, "ubuntu22")
@@ -184,9 +184,9 @@ func TestExtractKernelsEmptyReleases(t *testing.T) {
 
 func TestExtractKernelsNilFields(t *testing.T) {
 	releases := []*github.RepositoryRelease{
-		{TagName: nil, Body: nil},
+		{TagName: "", Body: nil},
 	}
-	// GetTagName/GetBody return "" for nil fields, so this should not panic
+	// TagName is a plain string in go-github v93; GetBody returns "" for a nil Body, so this should not panic
 	result := extractKernels(releases, "ubuntu22")
 	if len(result) != 0 {
 		t.Errorf("expected 0 kernels, got %v", result)
@@ -195,8 +195,8 @@ func TestExtractKernelsNilFields(t *testing.T) {
 
 func TestExtractKernelsMultipleReleasesMatchSameVariant(t *testing.T) {
 	releases := []*github.RepositoryRelease{
-		{TagName: strPtr("ubuntu22/20240101"), Body: strPtr("- Kernel Version: 6.5.0-44-generic\n")},
-		{TagName: strPtr("ubuntu22/20240201"), Body: strPtr("- Kernel Version: 6.5.0-45-generic\n")},
+		{TagName: "ubuntu22/20240101", Body: strPtr("- Kernel Version: 6.5.0-44-generic\n")},
+		{TagName: "ubuntu22/20240201", Body: strPtr("- Kernel Version: 6.5.0-45-generic\n")},
 	}
 
 	result := extractKernels(releases, "ubuntu22")

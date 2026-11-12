@@ -11,7 +11,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/google/go-github/v39/github"
+	"github.com/google/go-github/v93/github"
 	"golang.org/x/oauth2"
 )
 
@@ -23,7 +23,12 @@ func init() {
 		&oauth2.Token{AccessToken: os.Getenv("GITHUB_PAT")},
 	)
 	tc := oauth2.NewClient(ctx, ts)
-	client = github.NewClient(tc)
+	var err error
+	client, err = github.NewClient(github.WithHTTPClient(tc))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "failed to create GitHub client:", err)
+		os.Exit(1)
+	}
 }
 
 func main() {
